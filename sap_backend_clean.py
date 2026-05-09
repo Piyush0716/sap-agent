@@ -15,7 +15,7 @@ app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], all
 
 SUPABASE_URL = "https://wqaiziymroogggjyalqe.supabase.co"
 SUPABASE_KEY = "sb_secret_R_mcP6nHrmXLxfnHJVio3w_DJHwvzfK"
-GROQ_KEY = "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"
+GROQ_KEY = "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"
 
 groq_client = Groq(api_key=GROQ_KEY)
 SB = {"apikey": SUPABASE_KEY, "Authorization": f"Bearer {SUPABASE_KEY}", "Content-Type": "application/json"}
