@@ -79,15 +79,16 @@ Mandatory by type:
 - New Business Quote: customer_name + change_type
 - Renewal Quote: contract_id + change_type
 
+Request type (from form, use this if description does not specify): {rt}
 Description: {desc}
 PDF text: {pdf}
 """
 
-def extract(description, pdf_text=""):
+def extract(description, pdf_text="", request_type=""):
     try:
         r = groq_client.chat.completions.create(
             model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": PROMPT.format(desc=description, pdf=pdf_text or "None")}],
+            messages=[{"role": "user", "content": PROMPT.format(desc=description, pdf=pdf_text or "None", rt=request_type or "Not specified")}],
             max_tokens=800, temperature=0
         )
         text = re.sub(r'```json|```', '', r.choices[0].message.content.strip()).strip()
@@ -156,9 +157,15 @@ def health():
 @app.post("/process-case")
 def process_case(req: CaseIn):
     case_id = req.case_id or rand_id()
-    extracted = extract(req.description, req.pdf_text)
+    extracted = extract(req.description, req.pdf_text, req.request_type or "")
     if "error" in extracted and not extracted.get("change_type"):
         return {"status": "error", "case_id": case_id, "message": "Could not process request. Please try again."}
+    # Use form request_type if LLM didn't extract it
+    if req.request_type and not extracted.get("request_type"):
+        extracted["request_type"] = req.request_type
+    # Remove request_type from missing_fields if provided in form
+    if req.request_type and "request_type" in extracted.get("missing_fields", []):
+        extracted["missing_fields"] = [m for m in extracted["missing_fields"] if "request_type" not in m]
     missing = extracted.get("missing_fields", [])
     if not extracted.get("request_type"):
         missing.append("request_type")
