@@ -73,11 +73,14 @@ Fields:
 - missing_fields: list of mandatory fields missing
 
 Mandatory by type:
-- Contract Amendment: contract_id + change_type
+- Contract Amendment: contract_id + change_type + (serial_numbers OR explicit "all items")
 - Renewal Amendment: (quote_id OR reference_id) + change_type
 - Orders: (order_id OR reference_id) + change_type
 - New Business Quote: customer_name + change_type
 - Renewal Quote: contract_id + change_type
+
+Be smart about ambiguity: if a change (like quantity change) could apply to multiple line items or serials under a contract, and none is specified, add a natural question to missing_fields like "Does this apply to all items under the contract, or a specific serial number?"
+Do not ask for information that can be clearly inferred from context.
 
 Request type (from form, use this if description does not specify): {rt}
 Description: {desc}
