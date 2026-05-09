@@ -9,6 +9,29 @@ from groq import Groq
 from datetime import datetime
 import random
 import string
+import base64
+import io
+try:
+    import pdfplumber
+    PDF_SUPPORT = True
+except:
+    PDF_SUPPORT = False
+
+def extract_pdf_text(b64_string):
+    """Extract text from base64 encoded PDF"""
+    if not PDF_SUPPORT or not b64_string:
+        return ""
+    try:
+        pdf_bytes = base64.b64decode(b64_string)
+        text_parts = []
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages[:10]:  # max 10 pages
+                t = page.extract_text()
+                if t:
+                    text_parts.append(t)
+        return "\n".join(text_parts)[:3000]
+    except Exception as e:
+        return f"[PDF could not be read: {str(e)}]"
 
 app = FastAPI(title="SAP Agent")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
@@ -160,7 +183,12 @@ def health():
 @app.post("/process-case")
 def process_case(req: CaseIn):
     case_id = req.case_id or rand_id()
-    extracted = extract(req.description, req.pdf_text, req.request_type or "")
+    pdf_text = ""
+    if req.pdf_text and req.pdf_text != "[PDF attached]":
+        pdf_text = extract_pdf_text(req.pdf_text)
+    elif req.pdf_text == "[PDF attached]":
+        pdf_text = "[Customer attached a PDF but content could not be extracted]"
+    extracted = extract(req.description, pdf_text, req.request_type or "")
     if "error" in extracted and not extracted.get("change_type"):
         return {"status": "error", "case_id": case_id, "message": "Could not process request. Please try again."}
     # Use form request_type if LLM didn't extract it
