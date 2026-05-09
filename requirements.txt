@@ -1,0 +1,7 @@
+fastapi
+uvicorn
+groq
+requests
+pydantic
+httpx
+python-multipart

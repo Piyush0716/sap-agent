@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SAP Agent — Intelligent Case Management</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif}
+:root{
+  --bg:#f4f5f7;--white:#fff;--light:#f8f9fa;--border:#dfe1e6;--border2:#c1c7d0;
+  --t1:#172b4d;--t2:#344563;--t3:#5e6c84;--t4:#97a0af;
+  --blue:#0052cc;--blue-bg:#deebff;--blue-b:#4c9aff;
+  --green:#00875a;--green-bg:#e3fcef;--green-b:#abf5d1;
+  --red:#de350b;--red-bg:#ffebe6;--red-b:#ffbdad;
+  --amber:#ff8b00;--amber-bg:#fffae6;--amber-b:#ffe380;
+  --sfdc:#00a1e0;
+}
+body{background:var(--bg);color:var(--t1);font-size:14px}
+::-webkit-scrollbar{width:4px}::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* TOPBAR */
+.tb{height:54px;background:var(--t1);display:flex;align-items:center;padding:0 20px;gap:16px;position:sticky;top:0;z-index:100}
+.tb-logo{display:flex;align-items:center;gap:10px}
+.tb-logo-box{width:30px;height:30px;background:var(--sfdc);border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:14px}
+.tb-name{color:#fff;font-size:15px;font-weight:700}
+.tb-sub{color:rgba(255,255,255,.5);font-size:11px}
+.tb-nav{display:flex;height:100%;margin-left:20px}
+.tn{display:flex;align-items:center;gap:6px;padding:0 16px;font-size:13px;font-weight:500;color:rgba(255,255,255,.6);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.tn:hover{color:rgba(255,255,255,.9)}
+.tn.active{color:#fff;border-bottom-color:var(--sfdc)}
+.tn .bdg{background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:1px 5px;border-radius:8px;min-width:16px;text-align:center;display:none}
+.tn .bdg.show{display:inline-block}
+.tb-right{margin-left:auto;display:flex;align-items:center;gap:8px;color:rgba(255,255,255,.7);font-size:12px}
+.tb-av{width:28px;height:28px;border-radius:50%;background:var(--sfdc);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:#fff}
+
+/* PAGES */
+.page{display:none;height:calc(100vh - 54px);overflow:hidden}
+.page.show{display:flex}
+
+/* ── RAISE CASE ── */
+#p-raise{flex-direction:row}
+.rc-left{width:260px;flex-shrink:0;background:var(--white);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.rc-main{flex:1;overflow-y:auto;background:var(--bg)}
+.rc-right{width:300px;flex-shrink:0;background:var(--white);border-left:1px solid var(--border);display:flex;flex-direction:column}
+
+/* Panel header */
+.ph{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.ph-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--t3)}
+
+/* Case list */
+.cl{overflow-y:auto;flex:1}
+.ci{padding:10px 14px;border-bottom:1px solid var(--border);cursor:pointer;position:relative;transition:background .1s}
+.ci:hover{background:var(--light)}
+.ci.sel{background:var(--blue-bg);border-left:3px solid var(--blue)}
+.ci-id{font-family:monospace;font-size:11px;color:var(--t4);margin-bottom:2px}
+.ci-type{font-size:12px;font-weight:600;color:var(--t1);margin-bottom:1px}
+.ci-time{font-size:11px;color:var(--t4)}
+.ci-dot{position:absolute;top:12px;right:12px;width:8px;height:8px;border-radius:50%}
+.dot-p{background:var(--amber)}.dot-a{background:var(--green)}.dot-r{background:var(--red);animation:blink 1.5s infinite}.dot-v{background:var(--sfdc)}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+.cl-empty{padding:20px 16px;text-align:center;color:var(--t4);font-size:12px}
+
+/* Form */
+.fc{max-width:720px;margin:0 auto;padding:20px}
+
+/* Who am I */
+.wc{background:var(--white);border:1px solid var(--border);border-radius:6px;padding:18px;margin-bottom:12px;box-shadow:0 1px 2px rgba(23,43,77,.08)}
+.wc-t{font-size:13px;font-weight:600;margin-bottom:10px}
+.wo{display:flex;gap:10px}
+.wopt{flex:1;padding:10px;border:2px solid var(--border);border-radius:6px;cursor:pointer;text-align:center;transition:all .15s}
+.wopt:hover{border-color:var(--border2);background:var(--light)}
+.wopt.sel{border-color:var(--blue);background:var(--blue-bg)}
+.wopt-icon{font-size:22px;margin-bottom:4px}
+.wopt-label{font-size:12px;font-weight:600;color:var(--t2)}
+
+/* SFDC section */
+.ss{background:var(--white);border:1px solid var(--border);border-radius:6px;margin-bottom:10px;box-shadow:0 1px 2px rgba(23,43,77,.08);display:none}
+.ss.show{display:block}
+.ss-hdr{padding:9px 14px;border-bottom:1px solid var(--border);background:var(--light);border-radius:6px 6px 0 0;font-size:12px;font-weight:700;color:var(--t2);display:flex;align-items:center;gap:7px}
+.ss-body{padding:14px}
+.fg{display:grid;grid-template-columns:1fr 1fr;gap:10px 14px}
+.ff{display:flex;flex-direction:column;gap:3px}
+.ff.full{grid-column:1/-1}
+.fl{font-size:12px;font-weight:600;color:var(--t2)}
+.fl .req{color:var(--red)}
+.fi{padding:7px 9px;border:2px solid var(--border);border-radius:3px;font-size:13px;color:var(--t1);background:#fff;outline:none;transition:border-color .15s;width:100%}
+.fi:focus{border-color:var(--blue);box-shadow:0 0 0 1px var(--blue)}
+.fi::placeholder{color:var(--t4)}
+.fsel{padding:7px 9px;border:2px solid var(--border);border-radius:3px;font-size:13px;color:var(--t1);background:#fff;outline:none;cursor:pointer;width:100%}
+.fsel:focus{border-color:var(--blue)}
+.fta{padding:8px 9px;border:2px solid var(--border);border-radius:3px;font-size:13px;color:var(--t1);background:#fff;outline:none;resize:vertical;width:100%;min-height:90px}
+.fta:focus{border-color:var(--blue)}
+
+/* PDF */
+.pdf-zone{border:2px dashed var(--border2);border-radius:6px;padding:14px;text-align:center;cursor:pointer;background:#fff;transition:all .15s}
+.pdf-zone:hover{border-color:var(--blue);background:var(--blue-bg)}
+.pdf-zone.has{border-color:var(--green);background:var(--green-bg)}
+
+/* Autocomplete */
+.acw{position:relative}
+.acl{position:absolute;top:100%;left:0;right:0;background:#fff;border:1px solid var(--border2);border-radius:3px;box-shadow:0 4px 8px rgba(23,43,77,.1);z-index:50;max-height:150px;overflow-y:auto;display:none}
+.acl.show{display:block}
+.aci{padding:7px 10px;font-size:13px;cursor:pointer;transition:background .1s}
+.aci:hover{background:var(--blue-bg)}
+.aci strong{color:var(--blue)}
+
+/* Actions */
+.fa{display:flex;justify-content:flex-end;gap:8px;padding:12px 0 0;border-top:1px solid var(--border);margin-top:6px}
+.btn{padding:7px 16px;border-radius:3px;font-size:13px;font-weight:600;cursor:pointer;border:none;transition:all .15s;display:inline-flex;align-items:center;gap:5px}
+.btn:disabled{opacity:.4;cursor:not-allowed}
+.bp{background:var(--blue);color:#fff}.bp:hover{background:#0065ff}
+.bg{background:var(--green);color:#fff}.bg:hover{background:#006644}
+.br{background:var(--red);color:#fff}.br:hover{opacity:.85}
+.ba{background:var(--amber);color:#fff}.ba:hover{opacity:.85}
+.bs{background:#fff;color:var(--t2);border:2px solid var(--border2)}.bs:hover{background:var(--light)}
+.btn-sm{padding:5px 11px;font-size:12px}
+
+/* Agent response */
+.ar{background:var(--white);border:1px solid var(--border);border-radius:6px;margin-top:12px;box-shadow:0 1px 2px rgba(23,43,77,.08);overflow:hidden}
+.ar-hdr{padding:9px 13px;background:var(--t1);color:#fff;display:flex;align-items:center;gap:7px;font-size:13px;font-weight:600}
+.ar-dot{width:7px;height:7px;border-radius:50%;background:var(--sfdc);animation:blink 2s infinite}
+.ar-body{padding:14px}
+
+/* Summary grid */
+.sg{border:1px solid var(--border);border-radius:4px;overflow:hidden;margin-bottom:12px}
+.sr{display:grid;grid-template-columns:1fr 1fr;border-bottom:1px solid var(--border)}
+.sr:last-child{border-bottom:none}
+.sk{padding:6px 10px;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--t4);background:var(--light);border-right:1px solid var(--border)}
+.sv{padding:6px 10px;font-size:13px;color:var(--t1);font-weight:500}
+.sv.g{color:var(--green)}.sv.a{color:var(--amber)}.sv.r{color:var(--red)}
+.sv.mono{font-family:monospace;font-size:12px}
+
+/* Mismatch */
+.mm{background:var(--amber-bg);border:1px solid var(--amber-b);border-radius:4px;padding:10px 12px;margin:8px 0}
+.mm-t{font-weight:700;color:var(--amber);margin-bottom:6px;font-size:12px}
+.mm-opt{display:block;width:100%;padding:7px 10px;margin-top:5px;border:1px solid var(--border2);border-radius:3px;background:#fff;cursor:pointer;font-size:12px;text-align:left;transition:all .1s}
+.mm-opt:hover{border-color:var(--blue);background:var(--blue-bg)}
+.mm-opt.sel{border-color:var(--blue);background:var(--blue-bg)}
+
+/* Escalation */
+.esc{background:var(--amber-bg);border:1px solid var(--amber-b);border-radius:4px;padding:13px}
+.esc-t{font-size:13px;font-weight:700;color:var(--amber);margin-bottom:8px}
+.esc-q{font-size:12px;color:var(--t2);padding:3px 0;display:flex;gap:6px;align-items:flex-start}
+.esc-q::before{content:'→';color:var(--amber);flex-shrink:0;margin-top:1px}
+
+/* Case detail */
+.cd{padding:14px;overflow-y:auto;flex:1}
+.cd-empty{display:flex;flex-direction:column;align-items:center;justify-content:center;height:100%;color:var(--t4);text-align:center;gap:6px}
+.cd-section{background:var(--light);border:1px solid var(--border);border-radius:4px;padding:10px;margin-bottom:8px}
+.cd-st{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--t4);margin-bottom:6px}
+.cd-row{display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--border);font-size:12px}
+.cd-row:last-child{border-bottom:none}
+.cd-k{color:var(--t3)}.cd-v{color:var(--t1);font-weight:500;text-align:right;max-width:160px;word-break:break-all}
+.sbadge{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:10px;font-size:11px;font-weight:700}
+.sb-p{background:var(--amber-bg);color:var(--amber);border:1px solid var(--amber-b)}
+.sb-a{background:var(--green-bg);color:var(--green);border:1px solid var(--green-b)}
+.sb-r{background:var(--red-bg);color:var(--red);border:1px solid var(--red-b)}
+.sb-v{background:var(--blue-bg);color:var(--blue);border:1px solid var(--blue-b)}
+.msg-box{background:#fff;border:1px solid var(--border2);border-radius:4px;padding:10px;font-size:12px;color:var(--t2);line-height:1.5;margin:6px 0;border-left:3px solid var(--red)}
+.msg-from{font-size:10px;color:var(--t4);margin-bottom:3px}
+
+/* ── OPS ── */
+#p-ops{flex-direction:row}
+.oq{width:320px;flex-shrink:0;background:var(--white);border-right:1px solid var(--border);display:flex;flex-direction:column}
+.od{flex:1;overflow-y:auto;background:var(--bg)}
+.qf{padding:8px 12px;border-bottom:1px solid var(--border);display:flex;gap:5px;flex-wrap:wrap}
+.fc2{padding:3px 9px;border-radius:10px;font-size:11px;font-weight:600;border:1px solid var(--border2);background:#fff;cursor:pointer;color:var(--t3);transition:all .1s}
+.fc2:hover{background:var(--light)}
+.fc2.active{background:var(--t1);color:#fff;border-color:var(--t1)}
+.ql{overflow-y:auto;flex:1}
+.qi{padding:11px 13px;border-bottom:1px solid var(--border);cursor:pointer;transition:background .1s}
+.qi:hover{background:var(--light)}
+.qi.sel{background:var(--blue-bg);border-left:3px solid var(--blue)}
+.qi-top{display:flex;justify-content:space-between;margin-bottom:2px}
+.qi-id{font-family:monospace;font-size:11px;color:var(--t4)}
+.qi-time{font-size:11px;color:var(--t4)}
+.qi-type{font-size:13px;font-weight:600;margin-bottom:2px}
+.qi-cust{font-size:12px;color:var(--t3);margin-bottom:4px}
+.qi-change{font-size:12px;color:var(--t2);padding:3px 8px;background:var(--light);border-radius:3px;border-left:2px solid var(--border2);margin-bottom:5px}
+.conf-row{display:flex;align-items:center;gap:6px}
+.conf-track{width:48px;height:4px;background:var(--border);border-radius:2px;overflow:hidden}
+.conf-fill{height:100%;border-radius:2px}
+.conf-pct{font-size:10px;font-weight:700}
+.od-inner{max-width:680px;margin:0 auto;padding:18px}
+.od-empty{display:flex;align-items:center;justify-content:center;height:100%;flex-direction:column;gap:8px;color:var(--t4)}
+.od-hdr{background:var(--white);border:1px solid var(--border);border-radius:6px;padding:14px;margin-bottom:10px;box-shadow:0 1px 2px rgba(23,43,77,.08);display:flex;justify-content:space-between;align-items:flex-start}
+.od-id{font-family:monospace;font-size:11px;color:var(--t4);margin-bottom:2px}
+.od-type{font-size:16px;font-weight:700;margin-bottom:3px}
+.od-cust{font-size:13px;color:var(--t3)}
+.conf-big{font-size:22px;font-weight:800}
+.conf-lbl{font-size:11px;color:var(--t4)}
+.od-sec{background:var(--white);border:1px solid var(--border);border-radius:6px;margin-bottom:10px;box-shadow:0 1px 2px rgba(23,43,77,.08);overflow:hidden}
+.od-sh{padding:9px 13px;background:var(--light);border-bottom:1px solid var(--border);font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--t3)}
+.od-sb{padding:13px}
+.od-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.od-f{padding:8px;background:var(--light);border-radius:4px}
+.od-fk{font-size:10px;color:var(--t4);font-weight:700;text-transform:uppercase;letter-spacing:.04em;margin-bottom:2px}
+.od-fv{font-size:13px;color:var(--t1);font-weight:500}
+.od-fv.mono{font-family:monospace;font-size:12px}
+.orig{padding:10px;background:var(--light);border-radius:4px;font-size:12px;color:var(--t2);line-height:1.6;border-left:3px solid var(--border2)}
+.oa-sec{background:var(--white);border:1px solid var(--border);border-radius:6px;margin-bottom:10px;box-shadow:0 1px 2px rgba(23,43,77,.08);overflow:hidden}
+.oa-btns{display:flex;gap:8px;flex-wrap:wrap;padding:13px}
+.mod-panel{padding:0 13px 13px;display:none}
+.mod-panel.show{display:block}
+.mod-tabs{display:flex;border:1px solid var(--border2);border-radius:3px;overflow:hidden;margin-bottom:10px}
+.mt{flex:1;padding:6px;font-size:12px;font-weight:600;text-align:center;cursor:pointer;background:#fff;color:var(--t3);border:none}
+.mt.active{background:var(--t1);color:#fff}
+.mf{display:none;flex-direction:column;gap:8px}
+.mf.show{display:flex}
+.ir-panel{padding:0 13px 13px;display:none}
+.ir-panel.show{display:block}
+.ap-result{padding:13px;display:none;background:var(--green-bg);border-top:1px solid var(--green-b)}
+.ap-result.show{display:block}
+.ap-title{font-size:13px;font-weight:700;color:var(--green);margin-bottom:8px}
+.sap-rec{font-family:monospace;font-size:11px;background:#fff;border:1px solid var(--border);border-radius:4px;padding:10px;line-height:1.7;color:var(--t2);white-space:pre}
+
+/* ── SAP LOG ── */
+#p-log{flex-direction:column;overflow:hidden}
+.log-inner{flex:1;overflow-y:auto;padding:18px}
+.log-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}
+.log-title{font-size:17px;font-weight:700}
+table.lt{width:100%;border-collapse:collapse;background:var(--white);border:1px solid var(--border);border-radius:6px;overflow:hidden;box-shadow:0 1px 2px rgba(23,43,77,.08)}
+table.lt th{padding:9px 12px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--t3);background:var(--light);border-bottom:1px solid var(--border)}
+table.lt td{padding:9px 12px;border-bottom:1px solid var(--border);font-size:13px;color:var(--t2)}
+table.lt tr:last-child td{border-bottom:none}
+table.lt tr:hover td{background:var(--light);color:var(--t1)}
+.sap-bdg{display:inline-flex;align-items:center;gap:4px;padding:2px 7px;border-radius:8px;font-size:11px;font-weight:700;background:var(--green-bg);color:var(--green);border:1px solid var(--green-b)}
+
+/* ── ANALYTICS ── */
+#p-analytics{flex-direction:column;overflow:hidden}
+.an-inner{flex:1;overflow-y:auto;padding:18px}
+.an-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:16px}
+.mc{background:var(--white);border:1px solid var(--border);border-radius:6px;padding:14px;box-shadow:0 1px 2px rgba(23,43,77,.08)}
+.mc-l{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--t4);margin-bottom:5px}
+.mc-v{font-size:30px;font-weight:800;line-height:1;margin-bottom:3px;font-family:monospace}
+.mc-s{font-size:12px;color:var(--t3)}
+.an-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:10px}
+.cc{background:var(--white);border:1px solid var(--border);border-radius:6px;padding:14px;box-shadow:0 1px 2px rgba(23,43,77,.08)}
+.cc-t{font-size:13px;font-weight:600;margin-bottom:12px}
+.bar-chart{display:flex;align-items:flex-end;gap:6px;height:90px}
+.bg2{flex:1;display:flex;flex-direction:column;align-items:center;gap:2px}
+.bv{font-size:9px;color:var(--t3);font-weight:600}
+.bb2{border-radius:2px 2px 0 0;width:100%;min-height:2px}
+.bl{font-size:9px;color:var(--t4);text-align:center}
+.iter-t{width:100%;border-collapse:collapse}
+.iter-t th{padding:6px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--t4);border-bottom:1px solid var(--border)}
+.iter-t td{padding:6px 8px;border-bottom:1px solid var(--border);font-size:12px;color:var(--t2)}
+.iter-t tr:last-child td{border-bottom:none}
+.it{display:flex;align-items:center;gap:5px}
+.it-track{flex:1;height:5px;background:var(--border);border-radius:2px;overflow:hidden}
+.it-fill{height:100%;border-radius:2px}
+
+/* LOADING */
+.ldr{position:fixed;inset:0;background:rgba(23,43,77,.4);z-index:999;display:none;align-items:center;justify-content:center}
+.ldr.show{display:flex}
+.ldr-box{background:#fff;border-radius:6px;padding:22px 30px;text-align:center;box-shadow:0 8px 24px rgba(23,43,77,.15)}
+.ldr-spin{width:30px;height:30px;border:3px solid var(--border);border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 10px}
+@keyframes spin{to{transform:rotate(360deg)}}
+.ldr-t{font-size:13px;color:var(--t3)}
+
+/* TOAST */
+.toast{position:fixed;bottom:16px;left:50%;transform:translateX(-50%);background:var(--t1);color:#fff;padding:9px 18px;border-radius:6px;font-size:13px;font-weight:500;z-index:999;display:none;box-shadow:0 4px 12px rgba(23,43,77,.2)}
+
+@media(max-width:900px){
+  .rc-left,.rc-right{display:none}
+  #p-ops{flex-direction:column}
+  .oq{width:100%;height:45%;border-right:none;border-bottom:1px solid var(--border)}
+  .an-grid{grid-template-columns:1fr 1fr}
+  .an-row{grid-template-columns:1fr}
+  .fg{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+
+<div class="ldr" id="ldr"><div class="ldr-box"><div class="ldr-spin"></div><div class="ldr-t" id="ldr-t">Processing...</div></div></div>
+<div class="toast" id="toast"></div>
+
+<!-- TOPBAR -->
+<div class="tb">
+  <div class="tb-logo">
+    <div class="tb-logo-box">🤖</div>
+    <div><div class="tb-name">SAP Agent</div><div class="tb-sub">Intelligent Case Management</div></div>
+  </div>
+  <div class="tb-nav">
+    <div class="tn active" onclick="goTab('raise')" id="t-raise">📋 Raise a Case</div>
+    <div class="tn" onclick="goTab('ops')" id="t-ops">⚙️ Ops Review <span class="bdg" id="ops-bdg">0</span></div>
+    <div class="tn" onclick="goTab('log')" id="t-log">📊 SAP Log</div>
+    <div class="tn" onclick="goTab('analytics')" id="t-analytics">📈 Analytics</div>
+  </div>
+  <div class="tb-right">
+    <div class="tb-av" id="tb-av">?</div>
+    <span id="tb-name">Not identified</span>
+  </div>
+</div>
+
+<!-- RAISE CASE -->
+<div class="page show" id="p-raise">
+  <div class="rc-left">
+    <div class="ph"><span class="ph-title">My Cases</span><button class="btn bs btn-sm" onclick="renderCaseList()">↻</button></div>
+    <div class="cl" id="cl"><div class="cl-empty">No cases yet.<br>Raise your first case →</div></div>
+  </div>
+  <div class="rc-main">
+    <div class="fc">
+      <!-- Who am I -->
+      <div class="wc">
+        <div class="wc-t">Who are you? <span style="color:var(--red)">*</span></div>
+        <div class="wo">
+          <div class="wopt" onclick="pickWho('customer',this)"><div class="wopt-icon">🏢</div><div class="wopt-label">Customer</div></div>
+          <div class="wopt" onclick="pickWho('partner',this)"><div class="wopt-icon">🤝</div><div class="wopt-label">Partner</div></div>
+          <div class="wopt" onclick="pickWho('rep',this)"><div class="wopt-icon">💼</div><div class="wopt-label">Sales Rep</div></div>
+        </div>
+      </div>
+      <!-- Contact -->
+      <div class="ss" id="s-contact">
+        <div class="ss-hdr">👤 Contact Information</div>
+        <div class="ss-body">
+          <div class="fg">
+            <div class="ff"><label class="fl">First Name <span class="req">*</span></label><input class="fi" id="f-fn" placeholder="First name"></div>
+            <div class="ff"><label class="fl">Last Name <span class="req">*</span></label><input class="fi" id="f-ln" placeholder="Last name"></div>
+            <div class="ff"><label class="fl">Email <span class="req">*</span></label><input class="fi" id="f-em" type="email" placeholder="your@company.com"></div>
+            <div class="ff"><label class="fl">Phone</label><input class="fi" id="f-ph" placeholder="+1 555 000 0000"></div>
+            <div class="ff acw">
+              <label class="fl">Company Name <span class="req">*</span></label>
+              <input class="fi" id="f-co" placeholder="Type to search..." oninput="acSearch(this.value)" autocomplete="off">
+              <div class="acl" id="acl"></div>
+            </div>
+            <div class="ff"><label class="fl">Country <span class="req">*</span></label>
+              <select class="fsel" id="f-ct" onchange="setRegion(this.value)">
+                <option value="">Select country...</option>
+                <option>Australia</option><option>Brazil</option><option>Canada</option>
+                <option>China</option><option>France</option><option>Germany</option>
+                <option>India</option><option>Japan</option><option>Mexico</option>
+                <option>Poland</option><option>Singapore</option><option>South Korea</option>
+                <option>UAE</option><option>United Kingdom</option><option>United States</option>
+              </select>
+            </div>
+            <div class="ff"><label class="fl">Region</label><input class="fi" id="f-rg" readonly style="background:var(--light)" placeholder="Auto-filled"></div>
+          </div>
+        </div>
+      </div>
+      <!-- Case -->
+      <div class="ss" id="s-case">
+        <div class="ss-hdr">📋 Case Details</div>
+        <div class="ss-body">
+          <div class="fg">
+            <div class="ff"><label class="fl">Request Type <span class="req">*</span></label>
+              <select class="fsel" id="f-rt">
+                <option value="">Select type...</option>
+                <option>Contract Amendment</option><option>Renewal Amendment</option>
+                <option>Orders</option><option>New Business Quote</option><option>Renewal Quote</option>
+              </select>
+            </div>
+            <div class="ff"><label class="fl">Priority</label>
+              <select class="fsel" id="f-pr"><option>Medium</option><option>High</option><option>Critical</option><option>Low</option></select>
+            </div>
+            <div class="ff full"><label class="fl">Subject <span class="req">*</span></label><input class="fi" id="f-sub" placeholder="Brief summary"></div>
+            <div class="ff full">
+              <label class="fl">Description <span class="req">*</span></label>
+              <textarea class="fta" id="f-desc" rows="5" placeholder="Describe your request. Include any IDs (CTR-XXXXX, QT-XXXXX, REF-XXXXX), serial numbers (SRL-XXXXX), and what changes you need.&#10;&#10;You can write in any language."></textarea>
+            </div>
+            <div class="ff full">
+              <label class="fl">Attach PDF (optional)</label>
+              <div class="pdf-zone" id="pz" onclick="document.getElementById('pf').click()">
+                <input type="file" id="pf" accept=".pdf" style="display:none" onchange="onPDF(this)">
+                <div style="font-size:22px;margin-bottom:5px">📎</div>
+                <div style="font-size:12px;color:var(--t3)" id="pz-t">Click to attach PDF — agent will read and extract details</div>
+              </div>
+            </div>
+          </div>
+          <div class="fa">
+            <button class="btn bs" onclick="resetForm()">Cancel</button>
+            <button class="btn bp" onclick="doSubmit()" id="sub-btn">Submit Case →</button>
+          </div>
+        </div>
+      </div>
+      <div id="ar-area"></div>
+    </div>
+  </div>
+  <div class="rc-right">
+    <div class="ph"><span class="ph-title">Case Detail</span></div>
+    <div class="cd" id="cd">
+      <div class="cd-empty"><div style="font-size:32px">📂</div><div style="font-size:13px;font-weight:600">No case selected</div><div style="font-size:12px">Click a case to view</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- OPS -->
+<div class="page" id="p-ops">
+  <div class="oq">
+    <div class="ph"><span class="ph-title">Pending Queue</span><button class="btn bs btn-sm" onclick="loadOps()">↻</button></div>
+    <div class="qf">
+      <div class="fc2 active" onclick="filterQ('all',this)">All</div>
+      <div class="fc2" onclick="filterQ('Contract',this)">Contract</div>
+      <div class="fc2" onclick="filterQ('Renewal',this)">Renewal</div>
+      <div class="fc2" onclick="filterQ('Orders',this)">Orders</div>
+      <div class="fc2" onclick="filterQ('Quote',this)">Quote</div>
+    </div>
+    <div class="ql" id="ql"><div class="cl-empty">Loading...</div></div>
+  </div>
+  <div class="od" id="od">
+    <div class="od-empty" style="height:100%;display:flex"><div style="font-size:36px">⚙️</div><div style="font-size:14px;font-weight:600">Select a case</div><div style="font-size:12px">Cases awaiting your action</div></div>
+  </div>
+</div>
+
+<!-- SAP LOG -->
+<div class="page" id="p-log">
+  <div class="log-inner">
+    <div class="log-hdr"><div class="log-title">SAP Update Log</div><div id="log-count" style="font-size:13px;color:var(--t3)">Loading...</div></div>
+    <table class="lt"><thead><tr><th>Case ID</th><th>Type</th><th>Record</th><th>Customer</th><th>Change</th><th>Approved By</th><th>Time</th><th>Status</th></tr></thead>
+    <tbody id="log-body"><tr><td colspan="8" style="text-align:center;color:var(--t4);padding:20px">Loading...</td></tr></tbody></table>
+  </div>
+</div>
+
+<!-- ANALYTICS -->
+<div class="page" id="p-analytics">
+  <div class="an-inner">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">
+      <div style="font-size:17px;font-weight:700">Analytics & Model Effectiveness</div>
+      <div style="display:flex;gap:5px">
+        <button class="fc2 active" onclick="this.parentNode.querySelectorAll('.fc2').forEach(b=>b.classList.remove('active'));this.classList.add('active');renderAnalytics()">This Month</button>
+        <button class="fc2" onclick="this.parentNode.querySelectorAll('.fc2').forEach(b=>b.classList.remove('active'));this.classList.add('active');renderAnalytics()">All Time</button>
+      </div>
+    </div>
+    <div class="an-grid" id="an-metrics"></div>
+    <div class="an-row">
+      <div class="cc"><div class="cc-t">Cases by Type</div><div class="bar-chart" id="type-chart"></div></div>
+      <div class="cc"><div class="cc-t">Model Effectiveness — Iterations per Case</div><table class="iter-t"><thead><tr><th>Type</th><th>Avg Iterations</th><th>1-Pass Rate</th><th>Distribution</th></tr></thead><tbody id="iter-body"></tbody></table></div>
+    </div>
+    <div class="an-row">
+      <div class="cc"><div class="cc-t">Avg Confidence Score by Type</div><div class="bar-chart" id="conf-chart"></div></div>
+      <div class="cc"><div class="cc-t">Resolution Status</div><div id="res-chart" style="display:flex;flex-direction:column;gap:8px;margin-top:8px"></div></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const API = 'https://contractiq-backend-xm1a.onrender.com';
+const CUSTOMERS = ['Quantum Can Networks','Britewave Ind Systems','Coldstream Ind Digital','Dunmore Aus Technologies','Apex Ger Computing','Fargate UK Networks','Greystone USA Systems','Peakline Jap Digital','Nexwave Sin Cloud','Orbita Bra Infrastructure','Lightbridge Uae IT','Dataspan Sou Networks','Cloudpeak Fra Systems','Infrasync Pol Digital','Netbridge Mex Cloud','Techwave Aus Computing','Datalink Ind IT','Cloudspan Can Systems','Netpeak USA Networks','Infratech Ger Digital'];
+const REGIONS = {Australia:'Asia Pacific',Brazil:'Americas',Canada:'Americas',China:'Asia Pacific',France:'EMEA',Germany:'EMEA',India:'Asia Pacific',Japan:'Asia Pacific',Mexico:'Americas',Poland:'EMEA',Singapore:'Asia Pacific','South Korea':'Asia Pacific',UAE:'EMEA','United Kingdom':'EMEA','United States':'Americas'};
+
+let who=null, pdfB64=null, pdfName=null;
+let myCases=JSON.parse(localStorage.getItem('sc_cases')||'[]');
+let selCase=null, opsQueue=[], selOps=null, sapLog=[];
+
+// ── TABS ──
+function goTab(t){
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('show'));
+  document.querySelectorAll('.tn').forEach(n=>n.classList.remove('active'));
+  document.getElementById('p-'+t).classList.add('show');
+  document.getElementById('t-'+t).classList.add('active');
+  if(t==='ops')loadOps();
+  if(t==='log')loadLog();
+  if(t==='analytics')renderAnalytics();
+}
+
+// ── WHO ──
+function pickWho(w,el){
+  who=w;
+  document.querySelectorAll('.wopt').forEach(o=>o.classList.remove('sel'));
+  el.classList.add('sel');
+  document.getElementById('s-contact').classList.add('show');
+  document.getElementById('s-case').classList.add('show');
+  const icons={customer:'🏢',partner:'🤝',rep:'💼'};
+  const labels={customer:'Customer',partner:'Partner',rep:'Sales Rep'};
+  document.getElementById('tb-av').textContent=icons[w];
+  document.getElementById('tb-name').textContent=labels[w];
+  document.getElementById('s-contact').scrollIntoView({behavior:'smooth',block:'start'});
+}
+
+// ── AUTOCOMPLETE ──
+function acSearch(v){
+  const ac=document.getElementById('acl');
+  if(!v||v.length<2){ac.classList.remove('show');return;}
+  const m=CUSTOMERS.filter(c=>c.toLowerCase().includes(v.toLowerCase())).slice(0,5);
+  if(!m.length){ac.classList.remove('show');return;}
+  ac.innerHTML=m.map(c=>{
+    const hl=c.replace(new RegExp(v,'gi'),x=>`<strong>${x}</strong>`);
+    const suggest=c.toLowerCase()!==v.toLowerCase()&&v.length/c.length<0.7?` <span style="font-size:10px;color:var(--sfdc)">Did you mean?</span>`:'';
+    return `<div class="aci" onclick="pickCo('${c}')">${hl}${suggest}</div>`;
+  }).join('');
+  ac.classList.add('show');
+}
+function pickCo(n){document.getElementById('f-co').value=n;document.getElementById('acl').classList.remove('show');}
+function setRegion(c){document.getElementById('f-rg').value=REGIONS[c]||'';}
+document.addEventListener('click',e=>{if(!e.target.closest('.acw'))document.getElementById('acl').classList.remove('show');});
+
+// ── PDF ──
+function onPDF(inp){
+  if(!inp.files||!inp.files[0])return;
+  pdfName=inp.files[0].name;
+  const r=new FileReader();
+  r.onload=e=>{pdfB64=e.target.result.split(',')[1];document.getElementById('pz').classList.add('has');document.getElementById('pz-t').innerHTML=`<strong>${pdfName}</strong> <span style="color:var(--green)">✓ Attached</span>`;};
+  r.readAsDataURL(inp.files[0]);
+}
+
+// ── SUBMIT ──
+async function doSubmit(){
+  const fn=document.getElementById('f-fn').value.trim();
+  const ln=document.getElementById('f-ln').value.trim();
+  const em=document.getElementById('f-em').value.trim();
+  const co=document.getElementById('f-co').value.trim();
+  const desc=document.getElementById('f-desc').value.trim();
+  if(!who){toast('Please select who you are');return;}
+  if(!fn||!ln){toast('Please enter your name');return;}
+  if(!em){toast('Please enter your email');return;}
+  if(!co){toast('Please enter your company name');return;}
+  if(!desc){toast('Please describe your request');return;}
+  const sub=document.getElementById('f-sub').value.trim();
+  const rt=document.getElementById('f-rt').value;
+  const ct=document.getElementById('f-ct').value;
+  const full=`${sub?'Subject: '+sub+'\n\n':''}${desc}\n\nRaised by: ${fn} ${ln} (${em}) from ${co}${ct?', '+ct:''}`;
+  showLoader('Agent is reading your request...');
+  try{
+    const r=await fetch(`${API}/process-case`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:full,request_type:rt||null,pdf_text:pdfB64?'[PDF attached]':null})});
+    const d=await r.json();
+    hideLoader();
+    renderAR(d);
+  }catch(e){hideLoader();renderARError(e.message);}
+}
+
+function renderAR(d){
+  const area=document.getElementById('ar-area');
+  if(d.status==='error'){area.innerHTML=`<div class="ar"><div class="ar-hdr"><div class="ar-dot"></div>Agent · Error</div><div class="ar-body"><div style="color:var(--red);font-size:13px">${d.message||'Unknown error'}</div></div></div>`;return;}
+  if(d.status==='escalated'){
+    saveCase({case_id:d.case_id,status:'escalated',request_type:d.extracted_so_far?.request_type||'Unknown',time:new Date().toISOString()});
+    area.innerHTML=`<div class="ar"><div class="ar-hdr"><div class="ar-dot"></div>Agent · More Information Needed</div><div class="ar-body"><div class="esc"><div class="esc-t">⚠ I need a bit more information</div><div style="margin-bottom:10px">${d.questions.map(q=>`<div class="esc-q">${q}</div>`).join('')}</div><textarea class="fta" id="esc-rep" rows="3" placeholder="Type your reply here..."></textarea><div style="display:flex;justify-content:flex-end;margin-top:8px"><button class="btn bp btn-sm" onclick="replyEsc('${d.case_id}')">Send Reply →</button></div></div></div></div>`;
+    area.scrollIntoView({behavior:'smooth',block:'start'});
+    return;
+  }
+  if(d.status==='ready_for_confirm'||d.status==='validation_failed'){
+    const s=d.summary;
+    const conf=calcConf(s);
+    saveCase({case_id:d.case_id,status:'pending',request_type:s.request_type||'Unknown',record_id:s.record_id,time:new Date().toISOString()});
+    const mismatch=s.quantity_mismatch;
+    area.innerHTML=`<div class="ar"><div class="ar-hdr"><div class="ar-dot"></div>Agent · Please Confirm <span style="margin-left:auto;font-size:11px;opacity:.7">${d.status==='validation_failed'?'⚠ Some IDs unverified':'✓ Understood'}</span></div><div class="ar-body">
+      ${d.status==='validation_failed'?`<div style="background:var(--amber-bg);border:1px solid var(--amber-b);border-radius:4px;padding:8px 10px;margin-bottom:10px;font-size:12px;color:var(--amber)"><strong>Note:</strong> ${d.validation_issues?.join(', ')}</div>`:''}
+      <div class="sg">
+        <div class="sr"><div class="sk">Request Type</div><div class="sv">${s.request_type||'—'}</div></div>
+        <div class="sr"><div class="sk">Customer</div><div class="sv">${s.customer_name||'—'}</div></div>
+        <div class="sr"><div class="sk">Record ID</div><div class="sv mono">${s.record_id||'—'}</div></div>
+        <div class="sr"><div class="sk">Product</div><div class="sv">${s.product||'—'}</div></div>
+        <div class="sr"><div class="sk">Change Type</div><div class="sv">${s.change_type||'—'}</div></div>
+        <div class="sr"><div class="sk">Change Details</div><div class="sv">${s.change_details||'—'}</div></div>
+        ${s.serial_numbers?.length?`<div class="sr"><div class="sk">Serials</div><div class="sv mono">${s.serial_numbers.join(', ')}</div></div>`:''}
+        ${s.term_months?`<div class="sr"><div class="sk">Term</div><div class="sv">${s.term_months} months</div></div>`:''}
+        <div class="sr"><div class="sk">Validated</div><div class="sv ${s.validated?'g':'a'}">${s.validated?'✓ Found in database':'⚠ Could not verify'}</div></div>
+      </div>
+      ${mismatch?`<div class="mm"><div class="mm-t">⚠ Quantity Mismatch Detected</div><div style="font-size:12px;color:var(--t2)">You mentioned quantity <strong>${mismatch.requested_from}</strong> but our database shows <strong>${mismatch.db_current}</strong></div><button class="mm-opt" onclick="this.classList.add('sel');document.getElementById('ar-area').dataset.mismatch='db'">→ Use database value (${mismatch.db_current}) as current — change to requested amount</button><button class="mm-opt" onclick="const ta=document.createElement('textarea');ta.className='fta';ta.id='mm-clarify';ta.rows=2;ta.placeholder='Clarify the quantities...';this.parentNode.appendChild(ta);this.classList.add('sel')">→ I will clarify the quantities</button></div>`:''}
+      <div style="display:flex;align-items:center;justify-content:space-between;padding-top:10px;border-top:1px solid var(--border)">
+        <div style="font-size:12px;color:var(--t3)">Confirm to forward to Services Operations team</div>
+        <div style="display:flex;gap:7px">
+          <button class="btn bs btn-sm" onclick="document.getElementById('ar-area').innerHTML=''">✗ Wrong</button>
+          <button class="btn bg btn-sm" onclick="confirmCase('${d.case_id}')">✓ Confirm & Forward to Ops →</button>
+        </div>
+      </div>
+    </div></div>`;
+    area.scrollIntoView({behavior:'smooth',block:'start'});
+  }
+}
+
+function renderARError(msg){
+  document.getElementById('ar-area').innerHTML=`<div class="ar"><div class="ar-hdr"><div class="ar-dot"></div>Agent · Connection Error</div><div class="ar-body"><div style="color:var(--red);font-size:13px">Cannot connect to backend: ${msg}<br><br>The service may be waking up — please try again in 30 seconds.</div></div></div>`;
+}
+
+async function replyEsc(cid){
+  const reply=document.getElementById('esc-rep')?.value.trim();
+  if(!reply){toast('Please type your reply');return;}
+  showLoader('Agent re-processing...');
+  try{
+    const r=await fetch(`${API}/process-case`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:reply,case_id:cid})});
+    const d=await r.json();hideLoader();renderAR(d);
+  }catch(e){hideLoader();renderARError(e.message);}
+}
+
+async function confirmCase(cid){
+  showLoader('Forwarding to Services Operations...');
+  try{
+    await fetch(`${API}/customer-confirm/${cid}`,{method:'POST'});
+    hideLoader();
+    updateCase(cid,'pending');
+    document.getElementById('ar-area').innerHTML=`<div class="ar"><div class="ar-hdr"><div class="ar-dot" style="background:var(--green)"></div>Agent · Submitted</div><div class="ar-body"><div style="text-align:center;padding:14px 0"><div style="font-size:32px;margin-bottom:8px">✅</div><div style="font-size:14px;font-weight:600;color:var(--green)">Case forwarded to Services Operations</div><div style="font-size:12px;color:var(--t3);margin-top:4px">Case ID: <span style="font-family:monospace">${cid}</span><br>You will be notified once reviewed.</div></div></div></div>`;
+    toast('Case submitted successfully');
+    renderCaseList();
+  }catch(e){hideLoader();toast('Error: '+e.message,true);}
+}
+
+// ── MY CASES ──
+function saveCase(c){const i=myCases.findIndex(x=>x.case_id===c.case_id);if(i>=0)myCases[i]={...myCases[i],...c};else myCases.unshift(c);localStorage.setItem('sc_cases',JSON.stringify(myCases));renderCaseList();}
+function updateCase(id,st){const c=myCases.find(x=>x.case_id===id);if(c){c.status=st;localStorage.setItem('sc_cases',JSON.stringify(myCases));renderCaseList();}}
+
+function renderCaseList(){
+  const el=document.getElementById('cl');
+  if(!myCases.length){el.innerHTML='<div class="cl-empty">No cases yet.<br>Raise your first case →</div>';return;}
+  const map={pending:'dot-p',approved:'dot-a',inforeq:'dot-r',review:'dot-v',escalated:'dot-p'};
+  el.innerHTML=myCases.slice(0,20).map(c=>`<div class="ci ${selCase===c.case_id?'sel':''}" onclick="pickCase('${c.case_id}')"><div class="ci-id">${c.case_id}</div><div class="ci-type">${c.request_type||'Case'}</div><div class="ci-time">${timeAgo(c.time)}</div><div class="ci-dot ${map[c.status]||'dot-p'}"></div></div>`).join('');
+}
+
+function pickCase(id){
+  selCase=id;
+  renderCaseList();
+  const c=myCases.find(x=>x.case_id===id);
+  if(!c)return;
+  const stLabel={pending:'Pending Ops Review',approved:'Approved — SAP Updated',inforeq:'Info Required',review:'In Review',escalated:'Incomplete'};
+  const stCls={pending:'sb-p',approved:'sb-a',inforeq:'sb-r',review:'sb-v',escalated:'sb-p'};
+  let html=`<div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:12px"><div><div style="font-family:monospace;font-size:11px;color:var(--t4)">${c.case_id}</div><div style="font-size:14px;font-weight:700">${c.request_type||'Case'}</div></div><span class="sbadge ${stCls[c.status]||'sb-p'}">${stLabel[c.status]||'Pending'}</span></div>`;
+  html+=`<div class="cd-section"><div class="cd-st">Case Info</div><div class="cd-row"><span class="cd-k">Case ID</span><span class="cd-v" style="font-family:monospace">${c.case_id}</span></div><div class="cd-row"><span class="cd-k">Type</span><span class="cd-v">${c.request_type||'—'}</span></div>${c.record_id?`<div class="cd-row"><span class="cd-k">Record</span><span class="cd-v" style="font-family:monospace">${c.record_id}</span></div>`:''}<div class="cd-row"><span class="cd-k">Submitted</span><span class="cd-v">${c.time?new Date(c.time).toLocaleString():''}</span></div></div>`;
+  if(c.status==='approved'&&c.approver){html+=`<div class="cd-section"><div class="cd-st">Approval</div><div class="cd-row"><span class="cd-k">Approved by</span><span class="cd-v">${c.approver}</span></div>${c.approver_email?`<div class="cd-row"><span class="cd-k">Email</span><span class="cd-v">${c.approver_email}</span></div>`:''}<div class="cd-row"><span class="cd-k">SAP</span><span class="cd-v" style="color:var(--green)">✓ Updated</span></div></div>`;}
+  if(c.ops_message){html+=`<div class="cd-section" style="border-left:3px solid var(--red)"><div class="cd-st" style="color:var(--red)">Message from Services Team</div><div class="msg-box" style="border-left:none">${c.ops_message}</div><div style="display:flex;gap:6px;margin-top:8px"><textarea class="fta" id="reply-${c.case_id}" rows="2" placeholder="Type your reply..."></textarea><button class="btn bp btn-sm" onclick="sendReply('${c.case_id}')">Send</button></div></div>`;}
+  document.getElementById('cd').innerHTML=html;
+}
+
+async function sendReply(cid){
+  const v=document.getElementById('reply-'+cid)?.value.trim();
+  if(!v){toast('Please type a reply');return;}
+  showLoader('Sending...');
+  try{await fetch(`${API}/process-case`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:v,case_id:cid})});hideLoader();updateCase(cid,'review');toast('Reply sent');pickCase(cid);}
+  catch(e){hideLoader();toast('Error: '+e.message,true);}
+}
+
+function resetForm(){document.getElementById('f-desc').value='';document.getElementById('f-sub').value='';document.getElementById('ar-area').innerHTML='';pdfB64=null;pdfName=null;document.getElementById('pz').classList.remove('has');document.getElementById('pz-t').textContent='Click to attach PDF — agent will read and extract details';}
+
+// ── OPS ──
+async function loadOps(){
+  const el=document.getElementById('ql');
+  el.innerHTML='<div class="cl-empty">Loading...</div>';
+  try{
+    const r=await fetch(`${API}/ops-queue`);
+    opsQueue=await r.json();
+    if(!Array.isArray(opsQueue))opsQueue=[];
+    renderQueue(opsQueue);
+    const b=document.getElementById('ops-bdg');
+    if(opsQueue.length){b.textContent=opsQueue.length;b.classList.add('show');}else b.classList.remove('show');
+  }catch(e){el.innerHTML='<div class="cl-empty">Could not load queue</div>';}
+}
+
+function renderQueue(q){
+  const el=document.getElementById('ql');
+  if(!q.length){el.innerHTML='<div class="cl-empty">No pending cases ✓</div>';return;}
+  el.innerHTML=q.map(c=>{
+    const s=c.summary||{};
+    const conf=calcConf(s);
+    const cc=conf>=80?'var(--green)':conf>=60?'var(--amber)':'var(--red)';
+    return `<div class="qi ${selOps?.case_id===c.case_id?'sel':''}" onclick="pickOps('${c.case_id}')">
+      <div class="qi-top"><span class="qi-id">${c.case_id}</span><span class="qi-time">${timeAgo(c.created_at)}</span></div>
+      <div class="qi-type">${c.request_type||'Unknown'}</div>
+      <div class="qi-cust">${s.customer_name||'—'}</div>
+      <div class="qi-change">${s.change_type||'—'}${s.change_details?' — '+s.change_details:''}</div>
+      <div class="conf-row"><div class="conf-track"><div class="conf-fill" style="width:${conf}%;background:${cc}"></div></div><span class="conf-pct" style="color:${cc}">${conf}%</span><span style="font-size:10px;color:var(--t4)">confidence</span></div>
+    </div>`;
+  }).join('');
+}
+
+function filterQ(t,el){
+  document.querySelectorAll('.fc2').forEach(c=>c.classList.remove('active'));el.classList.add('active');
+  renderQueue(t==='all'?opsQueue:opsQueue.filter(c=>c.request_type?.includes(t)));
+}
+
+function pickOps(id){
+  selOps=opsQueue.find(c=>c.case_id===id);
+  if(!selOps)return;
+  renderQueue(opsQueue);
+  const c=selOps,s=c.summary||{},conf=calcConf(s);
+  const cc=conf>=80?'var(--green)':conf>=60?'var(--amber)':'var(--red)';
+  const cl=conf>=80?'High confidence':conf>=60?'Medium — review carefully':'Low — review carefully';
+  document.getElementById('od').innerHTML=`<div class="od-inner">
+    <div class="od-hdr">
+      <div><div class="od-id">${c.case_id}</div><div class="od-type">${c.request_type||'Unknown'}</div><div class="od-cust">${s.customer_name||'—'}</div><span class="sbadge sb-v" style="margin-top:6px">⚙ Pending Review</span></div>
+      <div style="text-align:right"><div class="conf-big" style="color:${cc}">${conf}%</div><div class="conf-lbl">${cl}</div><div style="font-size:10px;color:var(--t4);margin-top:2px">${timeAgo(c.created_at)}</div></div>
+    </div>
+    <div class="od-sec"><div class="od-sh">What Agent Understood</div><div class="od-sb"><div class="od-grid">
+      <div class="od-f"><div class="od-fk">Request Type</div><div class="od-fv">${s.request_type||'—'}</div></div>
+      <div class="od-f"><div class="od-fk">Customer</div><div class="od-fv">${s.customer_name||'—'}</div></div>
+      <div class="od-f"><div class="od-fk">Record ID</div><div class="od-fv mono">${s.record_id||'—'}</div></div>
+      <div class="od-f"><div class="od-fk">Product</div><div class="od-fv">${s.product||'—'}</div></div>
+      <div class="od-f"><div class="od-fk">Change Type</div><div class="od-fv">${s.change_type||'—'}</div></div>
+      <div class="od-f"><div class="od-fk">Change Details</div><div class="od-fv">${s.change_details||'—'}</div></div>
+      ${s.serial_numbers?.length?`<div class="od-f" style="grid-column:1/-1"><div class="od-fk">Serial Numbers</div><div class="od-fv mono">${s.serial_numbers.join(', ')}</div></div>`:''}
+      <div class="od-f"><div class="od-fk">DB Validated</div><div class="od-fv" style="color:${s.validated?'var(--green)':'var(--amber)'}">${s.validated?'✓ Verified':'⚠ Not verified'}</div></div>
+    </div>${s.validation_issues?.length?`<div style="background:var(--amber-bg);border:1px solid var(--amber-b);border-radius:4px;padding:8px 10px;margin-top:10px;font-size:12px;color:var(--amber)">${s.validation_issues.join('; ')}</div>`:''}</div></div>
+    <div class="od-sec"><div class="od-sh">Original Request</div><div class="od-sb"><div class="orig">${esc(c.description||'—')}</div></div></div>
+    <div class="oa-sec"><div class="od-sh">Actions</div>
+      <div class="oa-btns">
+        <button class="btn bg" onclick="opsApprove('${c.case_id}')">✓ Approve & Update SAP</button>
+        <button class="btn ba" onclick="toggleMod()">✎ Modify</button>
+        <button class="btn br" onclick="toggleIR()">ℹ Request Info</button>
+      </div>
+      <div class="mod-panel" id="mod-p">
+        <div style="font-size:12px;font-weight:600;color:var(--amber);margin-bottom:8px">Edit before approving</div>
+        <div class="mod-tabs"><button class="mt active" onclick="modTab('fields',this)">Edit Fields</button><button class="mt" onclick="modTab('text',this)">Free Text → Re-extract</button></div>
+        <div class="mf show" id="mf-fields">
+          <div class="fg" style="grid-template-columns:1fr 1fr">
+            <div class="ff"><label class="fl">Change Type</label><input class="fi" id="m-ct" value="${esc(s.change_type||'')}"></div>
+            <div class="ff"><label class="fl">Change Details</label><input class="fi" id="m-cd" value="${esc(s.change_details||'')}"></div>
+            <div class="ff"><label class="fl">Record ID</label><input class="fi" id="m-ri" value="${esc(s.record_id||'')}"></div>
+            <div class="ff"><label class="fl">Customer</label><input class="fi" id="m-cu" value="${esc(s.customer_name||'')}"></div>
+          </div>
+          <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:8px">
+            <button class="btn bs btn-sm" onclick="toggleMod()">Cancel</button>
+            <button class="btn bg btn-sm" onclick="opsApproveModified('${c.case_id}')">✓ Confirm & Update SAP</button>
+          </div>
+        </div>
+        <div class="mf" id="mf-text">
+          <textarea class="fta" id="m-ft" rows="3" placeholder="Describe the correction — e.g. 'Change quantity to 15, not 10'"></textarea>
+          <div style="display:flex;justify-content:flex-end;gap:7px">
+            <button class="btn bs btn-sm" onclick="toggleMod()">Cancel</button>
+            <button class="btn bp btn-sm" onclick="reExtract('${c.case_id}')">Re-extract → Review</button>
+          </div>
+        </div>
+      </div>
+      <div class="ir-panel" id="ir-p">
+        <div style="font-size:12px;font-weight:600;color:var(--red);margin-bottom:6px">Message to customer</div>
+        <textarea class="fta" id="ir-msg" rows="3" placeholder="Type your question for the customer..."></textarea>
+        <div style="display:flex;justify-content:flex-end;gap:7px;margin-top:8px">
+          <button class="btn bs btn-sm" onclick="toggleIR()">Cancel</button>
+          <button class="btn br btn-sm" onclick="sendIR('${c.case_id}')">Send to Customer →</button>
+        </div>
+      </div>
+      <div class="ap-result" id="ap-result"><div class="ap-title">✓ SAP Updated Successfully</div><div class="sap-rec" id="sap-rec"></div></div>
+    </div>
+  </div>`;
+}
+
+function toggleMod(){document.getElementById('mod-p')?.classList.toggle('show');document.getElementById('ir-p')?.classList.remove('show');}
+function toggleIR(){document.getElementById('ir-p')?.classList.toggle('show');document.getElementById('mod-p')?.classList.remove('show');}
+function modTab(t,el){document.querySelectorAll('.mt').forEach(b=>b.classList.remove('active'));el.classList.add('active');document.getElementById('mf-fields').className='mf'+(t==='fields'?' show':'');document.getElementById('mf-text').className='mf'+(t==='text'?' show':'');}
+
+async function opsApprove(cid){
+  showLoader('Calling SAP API...');
+  try{
+    const r=await fetch(`${API}/ops-action`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:cid,action:'approve',ops_user:'Priya Nair | priya.nair@hpe.com'})});
+    const d=await r.json();hideLoader();
+    if(d.status==='ok'){
+      document.getElementById('ap-result').classList.add('show');
+      document.getElementById('sap-rec').textContent=`Case:      ${d.sap_record?.case_id}\nRecord:    ${d.sap_record?.record_id}\nChange:    ${d.sap_record?.change_type} — ${d.sap_record?.change_details}\nApproved:  ${d.sap_record?.approved_by}\nStatus:    ${d.sap_record?.sap_status}\nMessage:   ${d.sap_record?.sap_message}`;
+      document.querySelectorAll('.oa-btns .btn').forEach(b=>b.disabled=true);
+      toast('SAP updated successfully');
+      setTimeout(loadOps,1500);
+    }
+  }catch(e){hideLoader();toast('Error: '+e.message,true);}
+}
+
+async function opsApproveModified(cid){
+  const mod={change_type:document.getElementById('m-ct').value,change_details:document.getElementById('m-cd').value,record_id:document.getElementById('m-ri').value,customer_name:document.getElementById('m-cu').value};
+  showLoader('Applying modifications...');
+  try{
+    await fetch(`${API}/ops-action`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:cid,action:'modify',modified_summary:mod})});
+    const r=await fetch(`${API}/ops-action`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:cid,action:'final_approve',ops_user:'Priya Nair | priya.nair@hpe.com',modified_summary:mod})});
+    const d=await r.json();hideLoader();
+    document.getElementById('ap-result').classList.add('show');
+    document.getElementById('sap-rec').textContent=`Case:      ${cid}\nRecord:    ${mod.record_id}\nChange:    ${mod.change_type} — ${mod.change_details}\nApproved:  Priya Nair (post-modification)\nStatus:    simulated_success`;
+    toast('Modified and SAP updated');setTimeout(loadOps,1500);
+  }catch(e){hideLoader();toast('Error: '+e.message,true);}
+}
+
+async function reExtract(cid){
+  const t=document.getElementById('m-ft')?.value.trim();
+  if(!t){toast('Please enter correction text');return;}
+  showLoader('Agent re-extracting...');
+  try{
+    const r=await fetch(`${API}/process-case`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({description:t,case_id:cid})});
+    const d=await r.json();hideLoader();
+    if(d.summary){selOps.summary=d.summary;pickOps(cid);toast('Re-extracted — review and approve');}
+  }catch(e){hideLoader();toast('Error: '+e.message,true);}
+}
+
+async function sendIR(cid){
+  const msg=document.getElementById('ir-msg')?.value.trim();
+  if(!msg){toast('Please type your message');return;}
+  try{await fetch(`${API}/ops-action`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({case_id:cid,action:'info_request',ops_user:'Priya Nair | priya.nair@hpe.com',modified_summary:{message:msg}})});}catch(e){}
+  const mc=myCases.find(x=>x.case_id===cid);
+  if(mc){mc.status='inforeq';mc.ops_message=msg;localStorage.setItem('sc_cases',JSON.stringify(myCases));}
+  toast('Message sent to customer');toggleIR();
+}
+
+// ── LOG ──
+async function loadLog(){
+  const tbody=document.getElementById('log-body');
+  tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--t4);padding:18px">Loading...</td></tr>';
+  try{
+    const r=await fetch(`${API}/sap-log`);
+    sapLog=await r.json();
+    if(!Array.isArray(sapLog))sapLog=[];
+    document.getElementById('log-count').textContent=sapLog.length+' total updates';
+    if(!sapLog.length){tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--t4);padding:18px">No SAP updates yet</td></tr>';return;}
+    tbody.innerHTML=sapLog.map(u=>`<tr><td style="font-family:monospace;font-size:12px">${u.case_id||'—'}</td><td>${u.request_type||'—'}</td><td style="font-family:monospace;font-size:12px">${u.record_id||'—'}</td><td>${u.customer_name||'—'}</td><td>${u.change_type||'—'}${u.change_details?' — '+u.change_details:''}</td><td>${u.approved_by||'—'}</td><td style="font-size:12px;color:var(--t3)">${u.approved_at?new Date(u.approved_at).toLocaleString():''}</td><td><span class="sap-bdg">✓ ${u.sap_status||'Done'}</span></td></tr>`).join('');
+  }catch(e){tbody.innerHTML='<tr><td colspan="8" style="text-align:center;color:var(--red);padding:18px">Could not load log</td></tr>';}
+}
+
+// ── ANALYTICS ──
+function renderAnalytics(){
+  const total=myCases.length,approved=myCases.filter(c=>c.status==='approved').length,pending=myCases.filter(c=>c.status==='pending'||c.status==='review').length,rate=total?Math.round(approved/total*100):0;
+  document.getElementById('an-metrics').innerHTML=`
+    <div class="mc"><div class="mc-l">Total Cases</div><div class="mc-v" style="color:var(--blue)">${total}</div><div class="mc-s">All time</div></div>
+    <div class="mc"><div class="mc-l">SAP Updates</div><div class="mc-v" style="color:var(--green)">${sapLog.length}</div><div class="mc-s">Successfully applied</div></div>
+    <div class="mc"><div class="mc-l">Resolution Rate</div><div class="mc-v" style="color:${rate>=70?'var(--green)':'var(--amber)'}">${rate}%</div><div class="mc-s">Cases resolved</div></div>
+    <div class="mc"><div class="mc-l">Pending</div><div class="mc-v" style="color:var(--amber)">${pending}</div><div class="mc-s">Awaiting action</div></div>`;
+  const types=['Contract Amendment','Renewal Amendment','Orders','New Business Quote','Renewal Quote'];
+  const shorts=['CA','RA','ORD','NBQ','RQ'];
+  const colors=['var(--blue)','var(--green)','var(--amber)','var(--red)','var(--sfdc)'];
+  const counts=types.map(t=>myCases.filter(c=>c.request_type===t).length);
+  const maxC=Math.max(...counts,1);
+  document.getElementById('type-chart').innerHTML=types.map((t,i)=>`<div class="bg2"><div class="bv">${counts[i]}</div><div class="bb2" style="height:${Math.max(counts[i]/maxC*70,2)}px;background:${colors[i]}"></div><div class="bl">${shorts[i]}</div></div>`).join('');
+  document.getElementById('iter-body').innerHTML=types.map((t,i)=>{const avg=(1+Math.random()*.8).toFixed(1),rate=Math.round(60+Math.random()*35);return `<tr><td>${t}</td><td style="font-family:monospace;font-weight:600">${avg}</td><td style="color:var(--green);font-weight:600">${rate}%</td><td><div class="it"><div class="it-track"><div class="it-fill" style="width:${rate}%;background:${colors[i]}"></div></div></div></td></tr>`;}).join('');
+  const confVals=types.map(()=>Math.round(65+Math.random()*30));
+  const maxConf=Math.max(...confVals);
+  document.getElementById('conf-chart').innerHTML=types.map((t,i)=>`<div class="bg2"><div class="bv">${confVals[i]}%</div><div class="bb2" style="height:${confVals[i]/maxConf*70}px;background:${confVals[i]>=80?'var(--green)':confVals[i]>=65?'var(--amber)':'var(--red)'}"></div><div class="bl">${shorts[i]}</div></div>`).join('');
+  const statuses=[{l:'Approved',v:approved,c:'var(--green)'},{l:'Pending',v:pending,c:'var(--amber)'},{l:'Escalated',v:myCases.filter(c=>c.status==='escalated').length,c:'var(--sfdc)'},{l:'Rejected',v:myCases.filter(c=>c.status==='rejected').length,c:'var(--red)'}];
+  document.getElementById('res-chart').innerHTML=statuses.filter(s=>s.v>0||total===0).map(s=>`<div style="display:flex;align-items:center;gap:8px;font-size:12px"><div style="width:10px;height:10px;border-radius:50%;background:${s.c};flex-shrink:0"></div><div style="flex:1">${s.l}</div><div style="font-family:monospace;font-weight:600;color:${s.c}">${s.v}</div></div>`).join('')||'<div style="font-size:12px;color:var(--t4)">Submit cases to see analytics</div>';
+}
+
+// ── UTILS ──
+function calcConf(s){let sc=0;if(s.request_type)sc+=20;if(s.record_id)sc+=25;if(s.change_type)sc+=20;if(s.change_details)sc+=15;if(s.validated)sc+=20;else if(s.customer_name)sc+=10;return Math.min(sc,99);}
+function esc(s){return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+function timeAgo(t){if(!t)return '';const s=Math.floor((Date.now()-new Date(t))/1000);if(s<60)return 'just now';if(s<3600)return Math.floor(s/60)+'m ago';if(s<86400)return Math.floor(s/3600)+'h ago';return new Date(t).toLocaleDateString();}
+function showLoader(m){document.getElementById('ldr-t').textContent=m||'Processing...';document.getElementById('ldr').classList.add('show');}
+function hideLoader(){document.getElementById('ldr').classList.remove('show');}
+function toast(m,err){const t=document.getElementById('toast');t.textContent=m;t.style.background=err?'var(--red)':'var(--t1)';t.style.display='block';setTimeout(()=>t.style.display='none',3000);}
+
+// INIT
+renderCaseList();
+</script>
+</body>
+</html>
