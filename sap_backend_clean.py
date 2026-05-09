@@ -11,27 +11,12 @@ import random
 import string
 import base64
 import io
+
 try:
     import pdfplumber
     PDF_SUPPORT = True
 except:
     PDF_SUPPORT = False
-
-def extract_pdf_text(b64_string):
-    """Extract text from base64 encoded PDF"""
-    if not PDF_SUPPORT or not b64_string:
-        return ""
-    try:
-        pdf_bytes = base64.b64decode(b64_string)
-        text_parts = []
-        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            for page in pdf.pages[:10]:  # max 10 pages
-                t = page.extract_text()
-                if t:
-                    text_parts.append(t)
-        return "\n".join(text_parts)[:3000]
-    except Exception as e:
-        return f"[PDF could not be read: {str(e)}]"
 
 app = FastAPI(title="SAP Agent")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
@@ -52,14 +37,16 @@ def db_get(table, params=""):
 
 def db_post(table, data):
     try:
-        r = requests.post(f"{SUPABASE_URL}/rest/v1/{table}", headers={**SB, "Prefer": "return=representation"}, json=data, timeout=15)
+        r = requests.post(f"{SUPABASE_URL}/rest/v1/{table}", 
+            headers={**SB, "Prefer": "return=representation"}, json=data, timeout=15)
         return r.json(), r.status_code
     except:
         return {}, 500
 
 def db_patch(table, col, val, data):
     try:
-        r = requests.patch(f"{SUPABASE_URL}/rest/v1/{table}?{col}=eq.{val}", headers={**SB, "Prefer": "return=representation"}, json=data, timeout=15)
+        r = requests.patch(f"{SUPABASE_URL}/rest/v1/{table}?{col}=eq.{val}",
+            headers={**SB, "Prefer": "return=representation"}, json=data, timeout=15)
         return r.json(), r.status_code
     except:
         return {}, 500
@@ -67,11 +54,139 @@ def db_patch(table, col, val, data):
 def rand_id():
     return "CASE-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
+def extract_pdf(b64):
+    if not PDF_SUPPORT or not b64:
+        return ""
+    try:
+        pdf_bytes = base64.b64decode(b64)
+        parts = []
+        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+            for page in pdf.pages[:10]:
+                t = page.extract_text()
+                if t:
+                    parts.append(t)
+        return "\n".join(parts)[:4000]
+    except:
+        return ""
+
+def fetch_db_context(text):
+    """Fetch relevant records from DB based on IDs found in text"""
+    context = []
+    
+    # Find contract IDs
+    for cid in re.findall(r'CTR-[A-Z0-9]+', text):
+        rows = db_get("contracts", f"contract_id=eq.{cid}&select=contract_id,customer_name,product_description,quantity,contract_status,contract_end_date,asset_serial_number,contract_type,quote_id,order_id")
+        if rows:
+            context.append(f"CONTRACT FOUND IN DATABASE:\n{json.dumps(rows[0], indent=2)}")
+
+    # Find quote IDs
+    for qid in re.findall(r'QT-[A-Z0-9]+', text):
+        rows = db_get("quotes", f"quote_id=eq.{qid}&select=quote_id,customer_name,product_description,quantity,quote_status,term_months,reference_id,contract_id")
+        if rows:
+            context.append(f"QUOTE FOUND IN DATABASE:\n{json.dumps(rows[0], indent=2)}")
+
+    # Find reference IDs
+    for rid in re.findall(r'REF-[A-Z0-9]+', text):
+        rows = db_get("quotes", f"reference_id=eq.{rid}&select=quote_id,customer_name,product_description,quantity,quote_status,term_months")
+        if not rows:
+            rows = db_get("orders", f"reference_id=eq.{rid}&select=order_id,customer_name,product_description,quantity,order_status")
+        if rows:
+            context.append(f"RECORD FOUND IN DATABASE:\n{json.dumps(rows[0], indent=2)}")
+
+    # Find order IDs
+    for oid in re.findall(r'ORD-[A-Z0-9]+', text):
+        rows = db_get("orders", f"order_id=eq.{oid}&select=order_id,customer_name,product_description,quantity,order_status,reference_id")
+        if rows:
+            context.append(f"ORDER FOUND IN DATABASE:\n{json.dumps(rows[0], indent=2)}")
+
+    return "\n\n".join(context)
+
+SYSTEM_PROMPT = """You are an intelligent SAP contract management agent. You work for HPE Services Operations.
+
+Your job is to understand service contract change requests from customers, partners, and sales reps — and prepare structured summaries for the Services Operations team to approve and execute in SAP.
+
+You have access to a contract database. When a request comes in, you will receive:
+1. The customer's description (could be in any language)
+2. Any PDF content attached
+3. Any matching database records already fetched for you
+
+Your behaviour:
+- Read everything provided and reason intelligently — like a smart human ops analyst would
+- Extract what you understand: what needs to change, on which record, for which customer
+- If information is in the PDF or database records, use it — do not ask for it again
+- Only ask for clarification if something is genuinely ambiguous or missing that you cannot infer
+- Do not ask for information that is already present anywhere in the context
+- Use common sense: if someone says "change end customer name", that applies to the contract level — do not ask which item
+- Be natural — do not sound like a bot with a checklist
+
+Always respond in this JSON format:
+{
+  "status": "understood" | "need_clarification" | "error",
+  "message": "Natural language response to show the customer",
+  "clarification_questions": ["question1", "question2"],  // only if status is need_clarification
+  "extracted": {
+    "request_type": "Contract Amendment | Renewal Amendment | Orders | New Business Quote | Renewal Quote",
+    "record_id": "CTR-XXXXX or QT-XXXXX or ORD-XXXXX or REF-XXXXX",
+    "customer_name": "...",
+    "product": "...",
+    "current_quantity": null,
+    "change_type": "what needs to change",
+    "change_details": "specific details of the change",
+    "serial_numbers": [],
+    "term_months": null,
+    "validated": true/false,
+    "quantity_mismatch": null or {"requested_from": "X", "db_current": "Y"}
+  }
+}
+
+Return ONLY valid JSON. No markdown, no explanation outside the JSON."""
+
+def call_agent(description, pdf_text, db_context, request_type, chat_history):
+    """Call LLM agent with full context"""
+    
+    user_message = f"""REQUEST TYPE (selected by user): {request_type or 'Not specified'}
+
+CUSTOMER DESCRIPTION:
+{description}
+"""
+    if pdf_text:
+        user_message += f"""
+PDF CONTENT:
+{pdf_text}
+"""
+    if db_context:
+        user_message += f"""
+DATABASE RECORDS (already fetched):
+{db_context}
+"""
+    
+    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    
+    # Add chat history for multi-turn
+    for h in chat_history[-6:]:
+        messages.append(h)
+    
+    messages.append({"role": "user", "content": user_message})
+    
+    try:
+        r = groq_client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=messages,
+            max_tokens=1200,
+            temperature=0.1
+        )
+        text = re.sub(r'```json|```', '', r.choices[0].message.content.strip()).strip()
+        result = json.loads(text)
+        return result, messages + [{"role": "assistant", "content": r.choices[0].message.content}]
+    except Exception as e:
+        return {"status": "error", "message": f"Agent error: {str(e)}", "extracted": {}}, messages
+
 class CaseIn(BaseModel):
     description: str
     request_type: Optional[str] = None
-    pdf_text: Optional[str] = None
+    pdf_base64: Optional[str] = None
     case_id: Optional[str] = None
+    chat_history: Optional[list] = []
 
 class OpsIn(BaseModel):
     case_id: str
@@ -79,153 +194,103 @@ class OpsIn(BaseModel):
     modified_summary: Optional[dict] = None
     ops_user: Optional[str] = "Priya Nair | priya.nair@hpe.com"
 
-PROMPT = """You are an expert at reading enterprise service contract requests.
-Extract fields from the description and return ONLY valid JSON.
-
-Fields:
-- request_type: one of [Contract Amendment, Renewal Amendment, Orders, New Business Quote, Renewal Quote]
-- contract_id: ID starting with CTR- (null if not found)
-- quote_id: ID starting with QT- (null if not found)
-- order_id: ID starting with ORD- (null if not found)
-- reference_id: ID starting with REF- (null if not found)
-- serial_numbers: list of IDs starting with SRL- (empty list if none)
-- customer_name: company name mentioned (null if not found)
-- change_type: what the customer wants (e.g. change quantity, add serial, renew contract)
-- change_details: specific details (e.g. from 5 to 10, remove SRL-XXX)
-- term_months: renewal term in months (null if not found)
-- missing_fields: list of mandatory fields missing
-
-Mandatory by type:
-- Contract Amendment: contract_id + change_type + (serial_numbers OR explicit "all items")
-- Renewal Amendment: (quote_id OR reference_id) + change_type
-- Orders: (order_id OR reference_id) + change_type
-- New Business Quote: customer_name + change_type
-- Renewal Quote: contract_id + change_type
-
-Be smart about ambiguity: if a change (like quantity change) could apply to multiple line items or serials under a contract, and none is specified, add a natural question to missing_fields like "Does this apply to all items under the contract, or a specific serial number?"
-Do not ask for information that can be clearly inferred from context.
-
-Request type (from form, use this if description does not specify): {rt}
-Description: {desc}
-PDF text: {pdf}
-"""
-
-def extract(description, pdf_text="", request_type=""):
-    try:
-        r = groq_client.chat.completions.create(
-            model="llama-3.3-70b-versatile",
-            messages=[{"role": "user", "content": PROMPT.format(desc=description, pdf=pdf_text or "None", rt=request_type or "Not specified")}],
-            max_tokens=800, temperature=0
-        )
-        text = re.sub(r'```json|```', '', r.choices[0].message.content.strip()).strip()
-        return json.loads(text)
-    except Exception as e:
-        return {"error": str(e), "change_type": "unknown", "missing_fields": ["description unclear"]}
-
-def validate(extracted):
-    found = {}
-    not_found = []
-    if extracted.get("contract_id"):
-        rows = db_get("contracts", f"contract_id=eq.{extracted['contract_id']}&select=contract_id,customer_name,product_description,quantity,contract_status,contract_end_date,asset_serial_number")
-        if rows: found["contract"] = rows[0]
-        else: not_found.append(f"Contract {extracted['contract_id']} not found")
-    if extracted.get("quote_id"):
-        rows = db_get("quotes", f"quote_id=eq.{extracted['quote_id']}&select=quote_id,customer_name,product_description,quantity,quote_status,term_months")
-        if rows: found["quote"] = rows[0]
-        else: not_found.append(f"Quote {extracted['quote_id']} not found")
-    if extracted.get("reference_id"):
-        rows = db_get("quotes", f"reference_id=eq.{extracted['reference_id']}&select=quote_id,customer_name,product_description,quantity,quote_status")
-        if rows: found["quote_by_ref"] = rows[0]
-        else:
-            rows = db_get("orders", f"reference_id=eq.{extracted['reference_id']}&select=order_id,customer_name,product_description,quantity,order_status")
-            if rows: found["order_by_ref"] = rows[0]
-            else: not_found.append(f"Reference {extracted['reference_id']} not found")
-    if extracted.get("order_id"):
-        rows = db_get("orders", f"order_id=eq.{extracted['order_id']}&select=order_id,customer_name,product_description,quantity,order_status")
-        if rows: found["order"] = rows[0]
-        else: not_found.append(f"Order {extracted['order_id']} not found")
-    return {"found": found, "not_found": not_found}
-
-def build_summary(extracted, validation):
-    rec = (validation["found"].get("contract") or validation["found"].get("quote") or
-           validation["found"].get("quote_by_ref") or validation["found"].get("order_by_ref") or
-           validation["found"].get("order") or {})
-    
-    # Check quantity mismatch
-    mismatch = None
-    if rec.get("quantity") and extracted.get("change_details"):
-        cd = extracted["change_details"].lower()
-        nums = re.findall(r'\d+', cd)
-        if nums and int(nums[0]) != int(rec["quantity"]):
-            mismatch = {"requested_from": nums[0], "db_current": str(rec["quantity"])}
-
-    return {
-        "request_type": extracted.get("request_type"),
-        "customer_name": rec.get("customer_name") or extracted.get("customer_name", "Unknown"),
-        "record_id": (extracted.get("contract_id") or extracted.get("quote_id") or
-                     extracted.get("order_id") or extracted.get("reference_id")),
-        "product": rec.get("product_description", "—"),
-        "current_quantity": rec.get("quantity"),
-        "serial_numbers": extracted.get("serial_numbers", []),
-        "change_type": extracted.get("change_type", "—"),
-        "change_details": extracted.get("change_details", "—"),
-        "term_months": extracted.get("term_months"),
-        "db_record": rec,
-        "validated": len(validation["not_found"]) == 0 and bool(validation["found"]),
-        "validation_issues": validation["not_found"],
-        "quantity_mismatch": mismatch
-    }
-
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "SAP Agent", "model": "llama-3.3-70b-versatile"}
+    return {"status": "ok", "service": "SAP Agent v2", "model": "llama-3.3-70b-versatile"}
 
 @app.post("/process-case")
 def process_case(req: CaseIn):
     case_id = req.case_id or rand_id()
-    pdf_text = ""
-    if req.pdf_text and req.pdf_text != "[PDF attached]":
-        pdf_text = extract_pdf_text(req.pdf_text)
-    elif req.pdf_text == "[PDF attached]":
-        pdf_text = "[Customer attached a PDF but content could not be extracted]"
-    extracted = extract(req.description, pdf_text, req.request_type or "")
-    if "error" in extracted and not extracted.get("change_type"):
-        return {"status": "error", "case_id": case_id, "message": "Could not process request. Please try again."}
-    # Use form request_type if LLM didn't extract it
-    if req.request_type and not extracted.get("request_type"):
-        extracted["request_type"] = req.request_type
-    # Remove request_type from missing_fields if provided in form
-    if req.request_type and "request_type" in extracted.get("missing_fields", []):
-        extracted["missing_fields"] = [m for m in extracted["missing_fields"] if "request_type" not in m]
-    missing = extracted.get("missing_fields", [])
-    if not extracted.get("request_type"):
-        missing.append("request_type")
-    if missing:
-        questions = []
-        for m in missing:
-            if "contract_id" in m: questions.append("Could you provide your Contract ID? (Format: CTR-XXXXXXXX)")
-            elif "quote_id" in m or "reference_id" in m: questions.append("Could you provide your Quote ID (QT-XXXXXXXX) or Reference ID (REF-XXXXXXXXXX)?")
-            elif "order_id" in m: questions.append("Could you provide your Order ID (ORD-XXXXXXXX) or Reference ID (REF-XXXXXXXXXX)?")
-            elif "customer_name" in m: questions.append("Could you provide your company name?")
-            elif "change_type" in m: questions.append("Could you describe what change you would like to make?")
-            elif "request_type" in m: questions.append("Could you clarify the type of request? (Contract Amendment, Renewal, New Quote, Order)")
-            else: questions.append(f"Could you provide: {m}?")
-        try: db_post("agent_cases", {"case_id": case_id, "description": req.description, "request_type": extracted.get("request_type"), "status": "escalated_to_customer", "extracted_data": json.dumps(extracted), "created_at": datetime.utcnow().isoformat()})
-        except: pass
-        return {"status": "escalated", "case_id": case_id, "questions": questions, "extracted_so_far": extracted}
-    validation = validate(extracted)
-    summary = build_summary(extracted, validation)
-    summary["case_id"] = case_id
-    try: db_post("agent_cases", {"case_id": case_id, "description": req.description, "request_type": extracted.get("request_type"), "status": "pending_customer_confirm", "extracted_data": json.dumps(extracted), "summary": json.dumps(summary), "created_at": datetime.utcnow().isoformat()})
-    except: pass
-    if validation["not_found"]:
-        return {"status": "validation_failed", "case_id": case_id, "message": "Could not validate some IDs against database.", "validation_issues": validation["not_found"], "summary": summary}
-    return {"status": "ready_for_confirm", "case_id": case_id, "message": "Request understood. Please confirm.", "summary": summary}
+    
+    # Extract PDF text
+    pdf_text = extract_pdf(req.pdf_base64) if req.pdf_base64 else ""
+    
+    # Combine all text to search for IDs
+    all_text = f"{req.description} {pdf_text}"
+    
+    # Fetch database context
+    db_context = fetch_db_context(all_text)
+    
+    # Call LLM agent
+    result, updated_history = call_agent(
+        req.description, 
+        pdf_text, 
+        db_context, 
+        req.request_type,
+        req.chat_history or []
+    )
+    
+    status = result.get("status", "error")
+    extracted = result.get("extracted", {})
+    
+    # Check quantity mismatch
+    if extracted.get("current_quantity") and extracted.get("change_details"):
+        nums = re.findall(r'\d+', str(extracted.get("change_details", "")))
+        if nums and db_context:
+            import re as re2
+            db_qty = re2.findall(r'"quantity":\s*(\d+)', db_context)
+            if db_qty and nums[0] != db_qty[0]:
+                extracted["quantity_mismatch"] = {
+                    "requested_from": nums[0],
+                    "db_current": db_qty[0]
+                }
+    
+    # Save case
+    try:
+        db_post("agent_cases", {
+            "case_id": case_id,
+            "description": req.description,
+            "request_type": extracted.get("request_type") or req.request_type,
+            "status": "pending_customer_confirm" if status == "understood" else "escalated_to_customer",
+            "extracted_data": json.dumps(extracted),
+            "summary": json.dumps(extracted),
+            "created_at": datetime.utcnow().isoformat()
+        })
+    except:
+        pass
+    
+    if status == "need_clarification":
+        return {
+            "status": "escalated",
+            "case_id": case_id,
+            "message": result.get("message", "I need some clarification."),
+            "questions": result.get("clarification_questions", []),
+            "extracted_so_far": extracted,
+            "chat_history": updated_history
+        }
+    elif status == "understood":
+        summary = {
+            "case_id": case_id,
+            "request_type": extracted.get("request_type") or req.request_type,
+            "customer_name": extracted.get("customer_name", "—"),
+            "record_id": extracted.get("record_id", "—"),
+            "product": extracted.get("product", "—"),
+            "current_quantity": extracted.get("current_quantity"),
+            "change_type": extracted.get("change_type", "—"),
+            "change_details": extracted.get("change_details", "—"),
+            "serial_numbers": extracted.get("serial_numbers", []),
+            "term_months": extracted.get("term_months"),
+            "validated": extracted.get("validated", False),
+            "validation_issues": [] if extracted.get("validated") else ["Could not verify against database"],
+            "quantity_mismatch": extracted.get("quantity_mismatch"),
+            "db_record": {}
+        }
+        return {
+            "status": "ready_for_confirm",
+            "case_id": case_id,
+            "message": result.get("message", "I have understood your request. Please confirm."),
+            "summary": summary,
+            "chat_history": updated_history
+        }
+    else:
+        return {"status": "error", "case_id": case_id, "message": result.get("message", "Could not process request.")}
 
 @app.post("/customer-confirm/{case_id}")
 def customer_confirm(case_id: str):
-    try: db_patch("agent_cases", "case_id", case_id, {"status": "pending_ops_review"})
-    except: pass
+    try:
+        db_patch("agent_cases", "case_id", case_id, {"status": "pending_ops_review"})
+    except:
+        pass
     return {"status": "ok", "message": "Forwarded to Services Operations team."}
 
 @app.get("/ops-queue")
@@ -235,33 +300,57 @@ def ops_queue():
     for c in (cases if isinstance(cases, list) else []):
         try: summary = json.loads(c.get("summary") or "{}")
         except: summary = {}
-        result.append({"case_id": c["case_id"], "request_type": c.get("request_type"), "status": c.get("status"), "created_at": c.get("created_at"), "description": c.get("description"), "summary": summary})
+        result.append({
+            "case_id": c["case_id"],
+            "request_type": c.get("request_type"),
+            "status": c.get("status"),
+            "created_at": c.get("created_at"),
+            "description": c.get("description"),
+            "summary": summary
+        })
     return result
 
 @app.post("/ops-action")
 def ops_action(req: OpsIn):
     if req.action in ["approve", "final_approve"]:
         cases = db_get("agent_cases", f"case_id=eq.{req.case_id}&select=*")
-        if not cases: return {"status": "error", "message": "Case not found"}
+        if not cases:
+            return {"status": "error", "message": "Case not found"}
         case = cases[0]
         try: summary = json.loads(case.get("summary") or "{}")
         except: summary = {}
-        if req.modified_summary: summary = req.modified_summary
-        sap = {"case_id": req.case_id, "request_type": case.get("request_type"), "record_id": summary.get("record_id"), "customer_name": summary.get("customer_name"), "change_type": summary.get("change_type"), "change_details": summary.get("change_details"), "approved_by": req.ops_user, "approved_at": datetime.utcnow().isoformat(), "sap_status": "simulated_success", "sap_message": f"SAP API called — {summary.get('change_type')} applied to {summary.get('record_id')}"}
+        if req.modified_summary:
+            summary = req.modified_summary
+        sap = {
+            "case_id": req.case_id,
+            "request_type": case.get("request_type"),
+            "record_id": summary.get("record_id"),
+            "customer_name": summary.get("customer_name"),
+            "change_type": summary.get("change_type"),
+            "change_details": summary.get("change_details"),
+            "approved_by": req.ops_user,
+            "approved_at": datetime.utcnow().isoformat(),
+            "sap_status": "simulated_success",
+            "sap_message": f"SAP API called — {summary.get('change_type')} applied to {summary.get('record_id')}"
+        }
         try: db_post("sap_updates", sap)
         except: pass
         try: db_patch("agent_cases", "case_id", req.case_id, {"status": "approved_sap_updated"})
         except: pass
         return {"status": "ok", "message": f"SAP updated. {summary.get('change_type')} applied to {summary.get('record_id')}.", "sap_record": sap}
+    
     elif req.action == "modify":
         if req.modified_summary:
             try: db_patch("agent_cases", "case_id", req.case_id, {"summary": json.dumps(req.modified_summary), "status": "modified_pending_confirm"})
             except: pass
         return {"status": "ok", "message": "Case updated."}
+    
     elif req.action == "info_request":
-        try: db_patch("agent_cases", "case_id", req.case_id, {"status": "info_requested", "ops_message": req.modified_summary.get("message","") if req.modified_summary else ""})
+        msg = req.modified_summary.get("message", "") if req.modified_summary else ""
+        try: db_patch("agent_cases", "case_id", req.case_id, {"status": "info_requested"})
         except: pass
-        return {"status": "ok", "message": "Info request sent to customer."}
+        return {"status": "ok", "message": "Info request sent."}
+    
     return {"status": "error", "message": "Unknown action"}
 
 @app.get("/sap-log")
