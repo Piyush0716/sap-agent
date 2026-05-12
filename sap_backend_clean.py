@@ -18,6 +18,165 @@ try:
 except:
     PDF_SUPPORT = False
 
+def generate_contract_pdf(contract: dict, case_id: str) -> str:
+    """Generate updated contract PDF and return as base64"""
+    try:
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle
+        from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+        from reportlab.lib import colors
+        from reportlab.lib.units import mm
+        from reportlab.lib.enums import TA_RIGHT
+        import base64
+        import io as _io
+
+        buf = _io.BytesIO()
+        W_PAGE = A4[0]; W = W_PAGE - 30*mm
+        doc = SimpleDocTemplate(buf, pagesize=A4,
+            leftMargin=15*mm, rightMargin=15*mm, topMargin=12*mm, bottomMargin=12*mm)
+
+        GREEN  = colors.HexColor('#01A982')
+        DARK   = colors.HexColor('#1A1A1A')
+        MGRAY  = colors.HexColor('#4A4A4A')
+        LGRAY  = colors.HexColor('#F5F5F5')
+        BORDER = colors.HexColor('#D8D8D8')
+        WHITE  = colors.white
+
+        def p(text, **kw):
+            d = dict(fontName='Helvetica', fontSize=9, textColor=DARK, leading=13)
+            d.update(kw)
+            return Paragraph(str(text), ParagraphStyle('_', **d))
+
+        def sec(title):
+            t = Table([[p(title, fontSize=8, fontName='Helvetica-Bold', textColor=WHITE, leading=12)]], colWidths=[W])
+            t.setStyle(TableStyle([('BACKGROUND',(0,0),(-1,-1),DARK),('PADDING',(0,0),(-1,-1),[8,5,8,5])]))
+            return t
+
+        story = []
+
+        # Header
+        hdr = Table([[
+            Table([[p('<b>HPE</b>', fontSize=28, fontName='Helvetica-Bold', textColor=GREEN, leading=32)],
+                   [p('Hewlett Packard Enterprise', fontSize=9, textColor=MGRAY, leading=12)],
+                   [p('Technology Services Division', fontSize=8, textColor=MGRAY, leading=11)]],
+                  colWidths=[75*mm]),
+            Table([[p('UPDATED SERVICE CONTRACT', fontSize=16, fontName='Helvetica-Bold', textColor=DARK, leading=20, alignment=TA_RIGHT)],
+                   [p(f'Contract: <b>{contract.get("contract_id","—")}</b>', fontSize=10, textColor=MGRAY, leading=14, alignment=TA_RIGHT)],
+                   [p(f'Updated via Case: {case_id}', fontSize=9, textColor=MGRAY, leading=13, alignment=TA_RIGHT)],
+                   [p(f'Updated: {datetime.utcnow().strftime("%d %b %Y %H:%M UTC")}', fontSize=9, textColor=colors.HexColor('#C23934'), fontName='Helvetica-Bold', leading=13, alignment=TA_RIGHT)]],
+                  colWidths=[W-75*mm]),
+        ]], colWidths=[75*mm, W-75*mm])
+        hdr.setStyle(TableStyle([('VALIGN',(0,0),(-1,-1),'TOP'),('PADDING',(0,0),(-1,-1),0)]))
+        story += [hdr, Spacer(1,3*mm)]
+        story.append(HRFlowable(width=W, thickness=2, color=GREEN))
+        story.append(Spacer(1,2*mm))
+
+        # Update notice
+        notice = Table([[p(f'⚠ This contract has been updated. Changes applied via SAP Agent Case {case_id}.',
+                          fontSize=9, fontName='Helvetica-Bold', textColor=colors.HexColor('#C23934'), leading=13)]],
+                       colWidths=[W])
+        notice.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,-1),colors.HexColor('#FDECEA')),
+            ('PADDING',(0,0),(-1,-1),8),
+            ('BOX',(0,0),(-1,-1),1,colors.HexColor('#F09D98')),
+        ]))
+        story += [notice, Spacer(1,4*mm)]
+
+        # Contract details
+        story += [sec('CONTRACT DETAILS'), Spacer(1,1*mm)]
+        details = [
+            [p('Contract ID', fontSize=8, textColor=MGRAY), p(f'<b>{contract.get("contract_id","—")}</b>', fontName='Courier'),
+             p('Status', fontSize=8, textColor=MGRAY), p(f'<b>{contract.get("contract_status","Active")}</b>', textColor=GREEN, fontName='Helvetica-Bold')],
+            [p('Contract Type', fontSize=8, textColor=MGRAY), p(contract.get("contract_type","—")),
+             p('Term', fontSize=8, textColor=MGRAY), p(f'{contract.get("contract_term_months","—")} months')],
+            [p('Start Date', fontSize=8, textColor=MGRAY), p(str(contract.get("contract_start_date","—"))),
+             p('End Date', fontSize=8, textColor=MGRAY), p(str(contract.get("contract_end_date","—")))],
+        ]
+        dt = Table(details, colWidths=[W/4]*4)
+        dt.setStyle(TableStyle([
+            ('GRID',(0,0),(-1,-1),0.5,BORDER),('PADDING',(0,0),(-1,-1),6),
+            ('BACKGROUND',(0,0),(0,-1),LGRAY),('BACKGROUND',(2,0),(2,-1),LGRAY),
+            ('ROWBACKGROUNDS',(0,0),(-1,-1),[WHITE,colors.HexColor('#FAFAFA')]),
+        ]))
+        story += [dt, Spacer(1,4*mm)]
+
+        # Customer
+        story += [sec('CUSTOMER INFORMATION'), Spacer(1,1*mm)]
+        cust = [
+            [p('End Customer', fontSize=8, textColor=MGRAY), p(f'<b>{contract.get("customer_name","—")}</b>'),
+             p('Customer ID', fontSize=8, textColor=MGRAY), p(str(contract.get("customer_id","—")))],
+            [p('Country', fontSize=8, textColor=MGRAY), p(contract.get("customer_country","—")),
+             p('Reseller', fontSize=8, textColor=MGRAY), p(contract.get("reseller_name","—"))],
+            [p('Distributor', fontSize=8, textColor=MGRAY), p(contract.get("distributor_name","—")),
+             p('Region', fontSize=8, textColor=MGRAY), p('—')],
+        ]
+        ct = Table(cust, colWidths=[W/4]*4)
+        ct.setStyle(TableStyle([
+            ('GRID',(0,0),(-1,-1),0.5,BORDER),('PADDING',(0,0),(-1,-1),6),
+            ('BACKGROUND',(0,0),(0,-1),LGRAY),('BACKGROUND',(2,0),(2,-1),LGRAY),
+            ('ROWBACKGROUNDS',(0,0),(-1,-1),[WHITE,colors.HexColor('#FAFAFA')]),
+        ]))
+        story += [ct, Spacer(1,4*mm)]
+
+        # Product & Asset
+        story += [sec('PRODUCT & ASSET DETAILS'), Spacer(1,1*mm)]
+        prod = [
+            [p('#',fontSize=8,fontName='Helvetica-Bold',textColor=WHITE,leading=12),
+             p('PRODUCT ID',fontSize=8,fontName='Helvetica-Bold',textColor=WHITE,leading=12),
+             p('DESCRIPTION',fontSize=8,fontName='Helvetica-Bold',textColor=WHITE,leading=12),
+             p('QTY',fontSize=8,fontName='Helvetica-Bold',textColor=WHITE,leading=12,alignment=TA_RIGHT),
+             p('SERIAL NUMBER',fontSize=8,fontName='Helvetica-Bold',textColor=WHITE,leading=12),
+             p('VALUE (USD)',fontSize=8,fontName='Helvetica-Bold',textColor=WHITE,leading=12,alignment=TA_RIGHT)],
+            [p('1'), p(str(contract.get("product_id","—")), fontName='Courier', fontSize=8),
+             p(f'<b>{contract.get("product_description","—")}</b><br/><font size="8" color="#767676">{contract.get("product_line","")}</font>', leading=14),
+             p(str(contract.get("quantity","—")), alignment=TA_RIGHT, fontName='Helvetica-Bold'),
+             p(str(contract.get("asset_serial_number","—")), fontName='Courier', fontSize=8),
+             p(f'{float(contract.get("contract_value_usd",0)):,.2f}', alignment=TA_RIGHT, fontName='Helvetica-Bold')],
+        ]
+        cw = [8*mm, 24*mm, 58*mm, 12*mm, W-142*mm, 30*mm]
+        cw[-1] = W - sum(cw[:-1])
+        pt = Table(prod, colWidths=cw)
+        pt.setStyle(TableStyle([
+            ('BACKGROUND',(0,0),(-1,0),DARK),('TEXTCOLOR',(0,0),(-1,0),WHITE),
+            ('FONTNAME',(0,0),(-1,0),'Helvetica-Bold'),('FONTSIZE',(0,0),(-1,0),8),
+            ('GRID',(0,0),(-1,-1),0.5,BORDER),('PADDING',(0,0),(-1,-1),6),
+            ('ROWBACKGROUNDS',(0,1),(-1,-1),[WHITE,LGRAY]),('VALIGN',(0,0),(-1,-1),'MIDDLE'),
+        ]))
+        story += [pt, Spacer(1,4*mm)]
+
+        # Approval stamp
+        story += [sec('APPROVAL RECORD'), Spacer(1,1*mm)]
+        appr = [
+            [p('Case ID', fontSize=8, textColor=MGRAY), p(case_id, fontName='Courier'),
+             p('Approved By', fontSize=8, textColor=MGRAY), p('Services Operations — HPE')],
+            [p('Change Applied', fontSize=8, textColor=MGRAY), p(f'{contract.get("_change_type","Contract update")}'),
+             p('Timestamp', fontSize=8, textColor=MGRAY), p(datetime.utcnow().strftime('%d %b %Y %H:%M UTC'))],
+        ]
+        at = Table(appr, colWidths=[W/4]*4)
+        at.setStyle(TableStyle([
+            ('GRID',(0,0),(-1,-1),0.5,BORDER),('PADDING',(0,0),(-1,-1),6),
+            ('BACKGROUND',(0,0),(0,-1),LGRAY),('BACKGROUND',(2,0),(2,-1),LGRAY),
+            ('ROWBACKGROUNDS',(0,0),(-1,-1),[WHITE,colors.HexColor('#FAFFFE')]),
+        ]))
+        story += [at, Spacer(1,4*mm)]
+
+        # Footer
+        story.append(HRFlowable(width=W, thickness=1.5, color=GREEN))
+        story.append(Spacer(1,2*mm))
+        footer = Table([[
+            p('Hewlett Packard Enterprise | hpe.com/services', fontSize=8, textColor=MGRAY),
+            p('System-generated after SAP Agent approval — Official Record', fontSize=8, textColor=MGRAY),
+            p('Page 1 of 1', fontSize=8, textColor=MGRAY, alignment=TA_RIGHT),
+        ]], colWidths=[W/3]*3)
+        footer.setStyle(TableStyle([('PADDING',(0,0),(-1,-1),0),('VALIGN',(0,0),(-1,-1),'TOP')]))
+        story.append(footer)
+
+        doc.build(story)
+        buf.seek(0)
+        return base64.b64encode(buf.read()).decode('utf-8')
+    except Exception as e:
+        return None
+
 app = FastAPI(title="SAP Agent")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"], allow_credentials=True)
 
@@ -185,6 +344,9 @@ class CaseIn(BaseModel):
     description: str
     request_type: Optional[str] = None
     pdf_base64: Optional[str] = None
+    pdf_base64_2: Optional[str] = None
+    pdf_base64_3: Optional[str] = None
+    pdf_names: Optional[list] = []
     case_id: Optional[str] = None
     chat_history: Optional[list] = []
 
@@ -202,8 +364,19 @@ def health():
 def process_case(req: CaseIn):
     case_id = req.case_id or rand_id()
     
-    # Extract PDF text
-    pdf_text = extract_pdf(req.pdf_base64) if req.pdf_base64 else ""
+    # Extract text from all PDFs
+    pdf_texts = []
+    pdf_names = req.pdf_names or []
+    
+    for i, (b64, name) in enumerate([(req.pdf_base64, pdf_names[0] if len(pdf_names)>0 else f"Document 1"),
+                                      (req.pdf_base64_2, pdf_names[1] if len(pdf_names)>1 else f"Document 2"),
+                                      (req.pdf_base64_3, pdf_names[2] if len(pdf_names)>2 else f"Document 3")]):
+        if b64:
+            text = extract_pdf(b64)
+            if text:
+                pdf_texts.append(f"--- {name} ---\n{text}")
+    
+    pdf_text = "\n\n".join(pdf_texts)
     
     # Combine all text to search for IDs
     all_text = f"{req.description} {pdf_text}"
@@ -321,23 +494,108 @@ def ops_action(req: OpsIn):
         except: summary = {}
         if req.modified_summary:
             summary = req.modified_summary
+
+        record_id = summary.get("record_id", "")
+        change_type = (summary.get("change_type") or "").lower()
+        change_details = summary.get("change_details") or ""
+        serial_numbers = summary.get("serial_numbers") or []
+
+        # ── STEP 1: Apply change to contracts table ──
+        db_updated = False
+        updated_contract = None
+        update_payload = {}
+
+        if record_id and record_id.startswith("CTR-"):
+            # Fetch current contract
+            existing = db_get("contracts", f"contract_id=eq.{record_id}&select=*")
+            if existing:
+                current = existing[0]
+
+                # Customer/company name change
+                if any(x in change_type for x in ["customer name", "company name", "sold to", "end customer"]):
+                    import re as _re
+                    # Extract new name from change_details — "from X to Y" or just "to Y"
+                    new_name = _re.search(r"to[: ]+([^,]+)", change_details, _re.IGNORECASE)
+                    if new_name:
+                        update_payload["customer_name"] = new_name.group(1).strip()
+
+                # Serial number changes
+                if any(x in change_type for x in ["serial", "sn", "add serial", "remove serial", "swap"]):
+                    if serial_numbers:
+                        if "remove" in change_type or "delete" in change_type:
+                            update_payload["asset_serial_number"] = "REMOVED-" + current.get("asset_serial_number","")
+                        elif "add" in change_type:
+                            existing_serial = current.get("asset_serial_number","")
+                            update_payload["asset_serial_number"] = existing_serial + "," + ",".join(serial_numbers)
+                        else:
+                            update_payload["asset_serial_number"] = ",".join(serial_numbers)
+
+                # Quantity change
+                if "quantity" in change_type or "qty" in change_type:
+                    import re as _re2
+                    nums = _re2.findall(r'\d+', change_details)
+                    if nums:
+                        update_payload["quantity"] = int(nums[-1])  # last number = new quantity
+
+                # Date change
+                if any(x in change_type for x in ["date", "end date", "start date", "term"]):
+                    import re as _re3
+                    dates = _re3.findall(r'\d{1,2}[/.-]\d{1,2}[/.-]\d{2,4}|\d{4}-\d{2}-\d{2}', change_details)
+                    if dates:
+                        if "end" in change_type:
+                            update_payload["contract_end_date"] = dates[-1]
+                        elif "start" in change_type:
+                            update_payload["contract_start_date"] = dates[0]
+
+                # Apply update to DB
+                if update_payload:
+                    try:
+                        db_patch("contracts", "contract_id", record_id, update_payload)
+                        db_updated = True
+                        # Fetch updated record
+                        updated = db_get("contracts", f"contract_id=eq.{record_id}&select=*")
+                        if updated:
+                            updated_contract = updated[0]
+                            # Merge updates for PDF generation
+                            updated_contract.update(update_payload)
+                    except Exception as e:
+                        pass
+
+        # ── STEP 2: Generate updated contract PDF ──
+        pdf_download_url = None
+        if updated_contract:
+            try:
+                pdf_b64 = generate_contract_pdf(updated_contract, req.case_id)
+                pdf_download_url = f"data:application/pdf;base64,{pdf_b64}"
+            except Exception as e:
+                pass
+
+        # ── STEP 3: Log to sap_updates ──
         sap = {
             "case_id": req.case_id,
             "request_type": case.get("request_type"),
-            "record_id": summary.get("record_id"),
+            "record_id": record_id,
             "customer_name": summary.get("customer_name"),
             "change_type": summary.get("change_type"),
-            "change_details": summary.get("change_details"),
+            "change_details": change_details,
             "approved_by": req.ops_user,
             "approved_at": datetime.utcnow().isoformat(),
-            "sap_status": "simulated_success",
-            "sap_message": f"SAP API called — {summary.get('change_type')} applied to {summary.get('record_id')}"
+            "sap_status": "success" if db_updated else "simulated_success",
+            "sap_message": f"DB updated: {', '.join(f'{k}={v}' for k,v in update_payload.items())}" if update_payload else f"SAP simulated — {summary.get('change_type')} on {record_id}"
         }
         try: db_post("sap_updates", sap)
         except: pass
         try: db_patch("agent_cases", "case_id", req.case_id, {"status": "approved_sap_updated"})
         except: pass
-        return {"status": "ok", "message": f"SAP updated. {summary.get('change_type')} applied to {summary.get('record_id')}.", "sap_record": sap}
+
+        return {
+            "status": "ok",
+            "message": f"{'DB updated + ' if db_updated else ''}SAP logged. {summary.get('change_type')} applied to {record_id}.",
+            "sap_record": sap,
+            "db_updated": db_updated,
+            "update_payload": update_payload,
+            "pdf_download_url": pdf_download_url
+        }
     
     elif req.action == "modify":
         if req.modified_summary:
