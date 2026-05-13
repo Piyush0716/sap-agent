@@ -401,7 +401,22 @@ def process_case(req: CaseIn):
     
     status = result.get("status", "error")
     extracted = result.get("extracted", {})
+
+    # Override validation in Python — don't trust LLM for this
+    # If we fetched DB context and record_id matches, it's validated
+    if db_context and extracted.get("record_id"):
+        rid = extracted["record_id"]
+        if rid in db_context:
+            extracted["validated"] = True
     
+    # Also try to extract record_id from db_context if LLM missed it
+    if not extracted.get("record_id") and db_context:
+        import re as _re
+        ids = _re.findall(r'CTR-[A-Z0-9]+|QT-[A-Z0-9]+|ORD-[A-Z0-9]+|REF-[A-Z0-9]+', db_context)
+        if ids:
+            extracted["record_id"] = ids[0]
+            extracted["validated"] = True
+
     # Check quantity mismatch
     if extracted.get("current_quantity") and extracted.get("change_details"):
         nums = re.findall(r'\d+', str(extracted.get("change_details", "")))
