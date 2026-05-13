@@ -376,7 +376,22 @@ class OpsIn(BaseModel):
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "service": "SAP Agent v2", "model": "llama-3.3-70b-versatile"}
+    return {"status": "ok", "service": "SAP Agent v2", "model": "llama-3.3-70b-versatile", "pdf_support": PDF_SUPPORT}
+
+@app.post("/debug-pdf")
+async def debug_pdf(req: CaseIn):
+    """Debug endpoint to check PDF extraction"""
+    pdf_text = extract_pdf(req.pdf_base64) if req.pdf_base64 else ""
+    import re as _r
+    ids = _r.findall(r'CTR-[A-Z0-9]+|QT-[A-Z0-9]+|SRL-[A-Z0-9]+', pdf_text)
+    return {
+        "pdf_received": bool(req.pdf_base64),
+        "pdf_base64_length": len(req.pdf_base64) if req.pdf_base64 else 0,
+        "pdf_text_length": len(pdf_text),
+        "pdf_text_preview": pdf_text[:300],
+        "ids_found": ids,
+        "pdf_support": PDF_SUPPORT
+    }
 
 @app.post("/process-case")
 def process_case(req: CaseIn):
