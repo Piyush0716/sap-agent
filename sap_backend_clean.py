@@ -214,17 +214,29 @@ def rand_id():
     return "CASE-" + ''.join(random.choices(string.ascii_uppercase + string.digits, k=8))
 
 def extract_pdf(b64):
-    if not PDF_SUPPORT or not b64:
+    if not b64:
         return ""
     try:
         pdf_bytes = base64.b64decode(b64)
-        parts = []
-        with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
-            for page in pdf.pages[:10]:
-                t = page.extract_text()
-                if t:
-                    parts.append(t)
-        return "\n".join(parts)[:4000]
+        # Try pdfplumber first
+        if PDF_SUPPORT:
+            try:
+                parts = []
+                with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
+                    for page in pdf.pages[:10]:
+                        t = page.extract_text()
+                        if t:
+                            parts.append(t)
+                if parts:
+                    return "\n".join(parts)[:4000]
+            except Exception as e:
+                pass
+        # Fallback: scan raw bytes for text patterns (catches IDs even without pdfplumber)
+        raw = pdf_bytes.decode('latin-1', errors='ignore')
+        # Extract readable ASCII chunks
+        import re as _r
+        chunks = _r.findall(r'[A-Za-z0-9\-\.,:/ ]{8,}', raw)
+        return " ".join(chunks)[:4000]
     except:
         return ""
 
