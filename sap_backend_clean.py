@@ -570,10 +570,71 @@ def ops_action(req: OpsIn):
         change_details = summary.get("change_details") or ""
         serial_numbers = summary.get("serial_numbers") or []
 
-        # ── STEP 1: Apply change to contracts table ──
+        # ── STEP 1: Apply change to source table ──
         db_updated = False
         updated_contract = None
         update_payload = {}
+
+        # ── QUOTES TABLE UPDATE (Renewal Amendment) ──
+        if record_id and record_id.startswith("QT-"):
+            existing = db_get("quotes", f"quote_id=eq.{record_id}&select=*")
+            if existing:
+                current = existing[0]
+                import re as _rq
+
+                # Customer name change
+                if any(x in change_type for x in ["customer name","company name","sold to","end customer"]):
+                    new_name = _rq.search(r"to[: ]+([^,]+)", change_details, _rq.IGNORECASE)
+                    if new_name:
+                        update_payload["customer_name"] = new_name.group(1).strip()
+
+                # Serial replace — swap old for new
+                if any(x in change_type for x in ["serial","replace","swap"]):
+                    current_serials = current.get("asset_serial_number","")
+                    if serial_numbers and len(serial_numbers) >= 2:
+                        old_srl = serial_numbers[0]; new_srl = serial_numbers[1]
+                        updated_serials = current_serials.replace(old_srl, new_srl)
+                        update_payload["asset_serial_number"] = updated_serials
+
+                # Serial remove — remove from list, reduce quantity
+                if "remove" in change_type or "delete" in change_type:
+                    current_serials = current.get("asset_serial_number","")
+                    current_qty = int(current.get("quantity") or 0)
+                    for srl in serial_numbers:
+                        if srl in current_serials:
+                            parts = [s.strip() for s in current_serials.split(",") if s.strip() != srl]
+                            update_payload["asset_serial_number"] = ",".join(parts)
+                            update_payload["quantity"] = current_qty - 1
+                            current_serials = update_payload["asset_serial_number"]
+                            current_qty = update_payload["quantity"]
+
+                # SLA change
+                if "sla" in change_type or "coverage" in change_type or "nbd" in change_type.lower():
+                    if "nbd" in change_details.lower() or "next business" in change_details.lower():
+                        update_payload["sla_code"] = "NBD"
+                    else:
+                        sla_match = _rq.search(r'([A-Z]{2}\d{3}[A-Z]\d)', change_details)
+                        if sla_match:
+                            update_payload["sla_code"] = sla_match.group(1)
+
+                # Quantity change
+                if "quantity" in change_type or "qty" in change_type:
+                    nums = _rq.findall(r'\d+', change_details)
+                    if nums:
+                        update_payload["quantity"] = int(nums[-1])
+
+                if update_payload:
+                    try:
+                        db_patch("quotes", "quote_id", record_id, update_payload)
+                        db_updated = True
+                        updated = db_get("quotes", f"quote_id=eq.{record_id}&select=*")
+                        if updated:
+                            updated_contract = updated[0]
+                            updated_contract.update(update_payload)
+                            updated_contract["_change_type"] = summary.get("change_type","")
+                            updated_contract["_is_quote"] = True
+                    except Exception as e:
+                        pass
 
         if record_id and record_id.startswith("CTR-"):
             # Fetch current contract
