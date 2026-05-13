@@ -412,14 +412,11 @@ def process_case(req: CaseIn):
         if ids:
             extracted["record_id"] = ids[0]
 
-    # Step 2: If record_id found, check if it's in db_context (DB returned it) OR in pdf_text
+    # Step 2: If record_id found anywhere in any source — validated
     if extracted.get("record_id"):
         rid = extracted["record_id"]
-        if rid in db_context:
-            # DB confirmed it exists
-            extracted["validated"] = True
-        elif rid in pdf_text:
-            # PDF contains it — treat as partially validated (found in document)
+        sources = db_context + " " + pdf_text + " " + all_text
+        if rid in sources:
             extracted["validated"] = True
 
     # Step 3: Pull customer_name from db_context if LLM missed it
