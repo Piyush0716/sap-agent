@@ -387,6 +387,15 @@ def process_case(req: CaseIn):
     # Combine all text to search for IDs
     all_text = f"{req.description} {pdf_text}"
     
+    # PRE-EXTRACT IDs from all text BEFORE calling LLM
+    import re as _pre
+    pre_contract = _pre.findall(r'CTR-[A-Z0-9]+', all_text)
+    pre_quote    = _pre.findall(r'QT-[A-Z0-9]+', all_text)
+    pre_order    = _pre.findall(r'ORD-[A-Z0-9]+', all_text)
+    pre_ref      = _pre.findall(r'REF-[A-Z0-9]+', all_text)
+    pre_serial   = _pre.findall(r'SRL-[A-Z0-9]+', all_text)
+    pre_record_id = (pre_contract or pre_quote or pre_order or pre_ref or [None])[0]
+
     # Fetch database context
     db_context = fetch_db_context(all_text)
     
@@ -405,19 +414,18 @@ def process_case(req: CaseIn):
     # Python validation — source of truth, never rely on LLM for this
     import re as _re
 
-    # Step 1: If no record_id from LLM, extract from pdf_text or db_context directly
-    if not extracted.get("record_id"):
-        search_text = pdf_text + " " + db_context + " " + req.description
-        ids = _re.findall(r'CTR-[A-Z0-9]+|QT-[A-Z0-9]+|ORD-[A-Z0-9]+|REF-[A-Z0-9]+', search_text)
-        if ids:
-            extracted["record_id"] = ids[0]
+    # Step 1: Always use pre-extracted record_id if LLM missed it
+    if not extracted.get("record_id") and pre_record_id:
+        extracted["record_id"] = pre_record_id
 
-    # Step 2: If record_id found anywhere in any source — validated
+    # Step 2: validated = True if record_id appears anywhere in all_text (PDF + description)
     if extracted.get("record_id"):
-        rid = extracted["record_id"]
-        sources = db_context + " " + pdf_text + " " + all_text
-        if rid in sources:
+        if extracted["record_id"] in all_text:
             extracted["validated"] = True
+
+    # Step 3: Fill serial numbers from pre-extraction if LLM missed
+    if not extracted.get("serial_numbers") and pre_serial:
+        extracted["serial_numbers"] = pre_serial
 
     # Step 3: Pull customer_name from db_context if LLM missed it
     if db_context and not extracted.get("customer_name"):
