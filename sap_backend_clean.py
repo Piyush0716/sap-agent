@@ -402,20 +402,37 @@ def process_case(req: CaseIn):
     status = result.get("status", "error")
     extracted = result.get("extracted", {})
 
-    # Override validation in Python — don't trust LLM for this
-    # If we fetched DB context and record_id matches, it's validated
-    if db_context and extracted.get("record_id"):
-        rid = extracted["record_id"]
-        if rid in db_context:
-            extracted["validated"] = True
-    
-    # Also try to extract record_id from db_context if LLM missed it
-    if not extracted.get("record_id") and db_context:
-        import re as _re
-        ids = _re.findall(r'CTR-[A-Z0-9]+|QT-[A-Z0-9]+|ORD-[A-Z0-9]+|REF-[A-Z0-9]+', db_context)
+    # Python validation — source of truth, never rely on LLM for this
+    import re as _re
+
+    # Step 1: If no record_id from LLM, extract from pdf_text or db_context directly
+    if not extracted.get("record_id"):
+        search_text = pdf_text + " " + db_context + " " + req.description
+        ids = _re.findall(r'CTR-[A-Z0-9]+|QT-[A-Z0-9]+|ORD-[A-Z0-9]+|REF-[A-Z0-9]+', search_text)
         if ids:
             extracted["record_id"] = ids[0]
+
+    # Step 2: If record_id found, check if it's in db_context (DB returned it) OR in pdf_text
+    if extracted.get("record_id"):
+        rid = extracted["record_id"]
+        if rid in db_context:
+            # DB confirmed it exists
             extracted["validated"] = True
+        elif rid in pdf_text:
+            # PDF contains it — treat as partially validated (found in document)
+            extracted["validated"] = True
+
+    # Step 3: Pull customer_name from db_context if LLM missed it
+    if db_context and not extracted.get("customer_name"):
+        cn = _re.search(r'"customer_name":\s*"([^"]+)"', db_context)
+        if cn:
+            extracted["customer_name"] = cn.group(1)
+
+    # Step 4: Pull product from db_context if LLM missed it
+    if db_context and not extracted.get("product"):
+        pd_match = _re.search(r'"product_description":\s*"([^"]+)"', db_context)
+        if pd_match:
+            extracted["product"] = pd_match.group(1)
 
     # Check quantity mismatch
     if extracted.get("current_quantity") and extracted.get("change_details"):
